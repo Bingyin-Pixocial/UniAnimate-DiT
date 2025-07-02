@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  unianimate-dit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: unianimate-dit
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    volumes:
+      # Mount the current directory to /workspace
+      - .:/workspace
+      # Mount a persistent volume for models and checkpoints
+      - unianimate_data:/workspace/checkpoints
+      - unianimate_data:/workspace/Wan2.1-I2V-14B-720P
+      # Mount outputs directory for generated videos
+      - ./outputs:/workspace/outputs
+      # Mount data directory for input data
+      - ./data:/workspace/data
+    ports:
+      # Optional: expose port for web interfaces if needed
+      - "7860:7860"  # For Gradio
+      - "8501:8501"  # For Streamlit
+    working_dir: /workspace
+    command: /bin/bash
+    stdin_open: true
+    tty: true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  unianimate_data:
+    driver: local 

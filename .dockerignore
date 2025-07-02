@@ -1,0 +1,93 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+pip-log.txt
+pip-delete-this-directory.txt
+.tox
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.mypy_cache
+.pytest_cache
+.hypothesis
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Project specific
+outputs/
+checkpoints/
+data/saved_pose/
+*.ckpt
+*.safetensors
+*.pth
+*.onnx
+Wan2.1-I2V-14B-720P/
+models_out/
+models_out_one_GPU/
+
+# Large files and directories
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.wmv
+*.flv
+*.webm
+*.m4v
+*.3gp
+*.ogv
+*.ts
+*.mts
+*.m2ts
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Logs
+logs/
+*.log
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Docker
+Dockerfile
+.dockerignore 
