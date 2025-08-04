@@ -143,7 +143,7 @@ def draw_pose(pose, H, W):
 
 def dw_func(_id, file_path, dwpose_model, dwpose_woface_folder='tmp_dwpose_wo_face', dwpose_withface_folder='tmp_dwpose_with_face'):
     video_name = (file_path).split('/')[-1].split('.mp4')[0]
-    dwpose_woface_folder = os.path.join("./20240902_videos/training_video_pose", video_name)
+    dwpose_woface_folder = os.path.join("./ubc_fashion/training_video_pose", video_name)
     
     
     frame_all = []
@@ -230,7 +230,7 @@ logger = get_logger('dw pose extraction')
 if __name__=='__main__':
     # mp.set_start_method('spawn')
     
-    posevideo_dir = "./20240902_videos"
+    posevideo_dir = "../datasets/ubc_fashion/train"
     video_paths = os.listdir(posevideo_dir)
     video_list = video_paths
     

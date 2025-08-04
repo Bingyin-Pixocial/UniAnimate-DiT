@@ -8,3 +8,8 @@ outputs/
 dwpose/__pycache__/
 data/saved_pose/
 *.pyc
+Wan2.1-I2V-14B-720P/
+Wan2.1-T2V-14B/
+scripts/
+diffsynth.egg-info/
+datasets/

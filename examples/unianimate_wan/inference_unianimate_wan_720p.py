@@ -1,3 +1,7 @@
+import os, sys
+# insert project root (two levels up from this file) onto Python’s module search path
+ROOT = os.path.abspath(os.path.join(__file__, "..", "..", ".."))
+sys.path.insert(0, ROOT)
 import torch
 from diffsynth import ModelManager, WanVideoPipeline, save_video, VideoData, WanUniAnimateVideoPipeline
 from modelscope import snapshot_download, dataset_snapshot_download
@@ -16,8 +20,18 @@ import torchvision.transforms as T
 from PIL import Image, ImageFilter
 import  torch.nn  as nn
 import cv2
-import sys  
+import sys
+import argparse
 sys.path.append("../../")  
+
+
+
+
+parser = argparse.ArgumentParser(description="UniAnimate-WAN inference script")
+parser.add_argument("--lora-path", dest="lora_path", type=str, required=True, help="Path to LoRA checkpoint .ckpt file")
+args = parser.parse_args()
+
+
 
 # define hight and width
 height = 1280
@@ -25,15 +39,12 @@ width = 720
 seed = 0
 max_frames = 81
 use_teacache = False
+lora_path = args.lora_path
+
 
 test_list_path= [
     # Format: [frame_interval, reference image, driving pose sequence]
-    [1, "data/images/WOMEN-Blouses_Shirts-id_00004955-01_4_full.jpg", "data/saved_pose/WOMEN-Blouses_Shirts-id_00004955-01_4_full"],
-    [1, "data/images/musk.jpg", "data/saved_pose/musk"],
-    [1, "data/images/WOMEN-Blouses_Shirts-id_00005125-03_4_full.jpg", "data/saved_pose/WOMEN-Blouses_Shirts-id_00005125-03_4_full"],
-    [1, "data/images/IMG_20240514_104337.jpg", "data/saved_pose/IMG_20240514_104337"],
-    [1, "data/images/10.jpg", "data/saved_pose/10"],
-    [1, "data/images/taiyi2.jpg", "data/saved_pose/taiyi2"],
+    [1, "data/pix/black_male.png", "data/saved_pose/black_male"],
 ]
 
 misc_size = [height,width]
@@ -67,7 +78,8 @@ model_manager.load_models(
 )
 
 # model_manager.load_lora_v2("./checkpoints/UniAnimate-Wan2.1-14B-Lora.ckpt", lora_alpha=1.0)
-model_manager.load_lora_v2("./checkpoints/UniAnimate-Wan2.1-14B-Lora-12000.ckpt", lora_alpha=1.0)
+print("Loading lora modelfrom ", lora_path)
+model_manager.load_lora_v2(lora_path, lora_alpha=1.0)
 
 # if you use deepspeed to train UniAnimate-Wan2.1, multiple checkpoints may need to be loaded, use the following form:
 # model_manager.load_lora_v2([
@@ -237,9 +249,16 @@ for path_dir_per in test_list_path:
     video_out = []
     for ii in range(len(video)):
         ss = video[ii]
-        video_out.append(image_compose_width(video_out_condition[ii], ss))
-    os.makedirs("./outputs", exist_ok=True)
-    save_video(video_out, "outputs/video_720P_{}_{}.mp4".format(ref_image_path.split('/')[-1], pose_file_path.split('/')[-1]), fps=15, quality=5)
+        video_out.append(ss)  # Only save the generated frame, not the concatenated version
+    # derive model name from the lora checkpoint path and create corresponding output folder
+    # strip the .ckpt extension to derive the model name
+    model_name = os.path.basename(lora_path).replace('.ckpt', '')
+    output_dir = os.path.join("outputs", model_name)
+    os.makedirs(output_dir, exist_ok=True)
+    # construct video file name and save into the model-specific folder
+    video_filename = f"{model_name}_{pose_file_path.split('/')[-1]}.mp4"
+    print("Saving video to ", os.path.join(output_dir, video_filename))
+    save_video(video_out, os.path.join(output_dir, video_filename), fps=30, quality=5)
 
 
     # CUDA_VISIBLE_DEVICES="0" python examples/unianimate_wan/inference_unianimate_wan_720p.py

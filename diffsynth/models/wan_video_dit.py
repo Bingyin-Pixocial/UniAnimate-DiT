@@ -327,6 +327,7 @@ class WanModel(torch.nn.Module):
         # from ipdb import set_trace; set_trace()
         if add_condition is not None:
             x = add_condition + x
+            print("Pose condition is added to the input latents")
         
         freqs = torch.cat([
             self.freqs[0][:f].view(f, 1, 1, -1).expand(f, h, w, -1),
