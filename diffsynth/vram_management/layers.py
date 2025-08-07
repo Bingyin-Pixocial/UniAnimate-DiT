@@ -92,4 +92,3 @@ def enable_vram_management_recursively(model: torch.nn.Module, module_map: dict,
 def enable_vram_management(model: torch.nn.Module, module_map: dict, module_config: dict, max_num_param=None, overflow_module_config: dict = None):
     enable_vram_management_recursively(model, module_map, module_config, max_num_param, overflow_module_config, total_num_param=0)
     model.vram_management_enabled = True
-
