@@ -512,7 +512,7 @@ class LightningModelForTrain_onestage(pl.LightningModule):
         noisy_latents = self.pipe.scheduler.add_noise(latents, noise, timestep)
         training_target = self.pipe.scheduler.training_target(latents, noise, timestep)
 
-        #Original WanVideoPipeline, w/o pose condition
+        
         noise_pred = self.pipe.denoising_model()(
             noisy_latents, timestep=timestep, **prompt_emb, **extra_input, **image_emb,
             use_gradient_checkpointing=self.use_gradient_checkpointing,

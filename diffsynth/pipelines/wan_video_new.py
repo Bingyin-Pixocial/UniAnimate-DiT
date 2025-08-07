@@ -1,5 +1,6 @@
 import torch, warnings, glob, os, types
 import numpy as np
+import random
 from PIL import Image
 from einops import repeat, reduce
 from typing import Optional, Union
@@ -14,17 +15,19 @@ from typing_extensions import Literal
 
 from ..utils import BasePipeline, ModelConfig, PipelineUnit, PipelineUnitRunner
 from ..models import ModelManager, load_state_dict
-from ..models.wan_video_new.dit import WanModel, RMSNorm, sinusoidal_embedding_1d
+from ..models.wan_video_new_dit import WanModel, RMSNorm, sinusoidal_embedding_1d
 from ..models.wan_video_text_encoder import WanTextEncoder, T5RelativeEmbedding, T5LayerNorm
 from ..models.wan_video_vae import WanVideoVAE, RMS_norm, CausalConv3d, Upsample
 from ..models.wan_video_image_encoder import WanImageEncoder
+from ..models.wan_video_vace import VaceWanModel
+from ..models.wan_video_motion_controller import WanMotionControllerModel
 from ..schedulers.flow_match import FlowMatchScheduler
 from ..prompters import WanPrompter
 from ..vram_management import enable_vram_management, AutoWrappedModule, AutoWrappedLinear, WanAutoCastLayerNorm
 from ..lora import GeneralLoRALoader
+import torch.nn as nn
 
-
-class WanVideoPipeline(BasePipeline):
+class PixPosePipeline(BasePipeline):
 
     def __init__(self, device="cuda", torch_dtype=torch.bfloat16, tokenizer_path=None):
         super().__init__(
@@ -51,16 +54,17 @@ class WanVideoPipeline(BasePipeline):
             WanVideoUnit_ImageEmbedderFused(),
             # WanVideoUnit_UnifiedSequenceParallel(),
             WanVideoUnit_TeaCache(),
+            WanVideoUnit_CfgMerger(),
         ]
-        # self.model_fn = model_fn_wan_video
-        
-    
-    # def load_lora(self, module, path, alpha=1):
-    #     loader = GeneralLoRALoader(torch_dtype=self.torch_dtype, device=self.device)
-    #     lora = load_state_dict(path, torch_dtype=self.torch_dtype, device=self.device)
-    #     loader.load(module, lora, alpha=alpha)
+        self.model_fn = model_fn_wan_video
 
-        
+    
+    def load_lora(self, module, path, alpha=1):
+        loader = GeneralLoRALoader(torch_dtype=self.torch_dtype, device=self.device)
+        lora = load_state_dict(path, torch_dtype=self.torch_dtype, device=self.device)
+        loader.load(module, lora, alpha=alpha)
+
+    # # Original WanVideoPipeline training loss
     # def training_loss(self, **inputs):
     #     max_timestep_boundary = int(inputs.get("max_timestep_boundary", 1) * self.scheduler.num_train_timesteps)
     #     min_timestep_boundary = int(inputs.get("min_timestep_boundary", 0) * self.scheduler.num_train_timesteps)
@@ -75,6 +79,46 @@ class WanVideoPipeline(BasePipeline):
     #     loss = torch.nn.functional.mse_loss(noise_pred.float(), training_target.float())
     #     loss = loss * self.scheduler.training_weight(timestep)
     #     return loss
+
+    # Training loss with pose condition, ref_image and cfg probability p and p1
+    def training_loss(self, pose_condition, ref_pose, enable_cfg=True, **inputs):
+        if enable_cfg:
+            p = random.random()
+            p1 = random.random()
+        else:
+            p = -1
+            p1 = -1
+        # Cfg
+        if p1 >= 0 and p1 < 0.05:
+            pose_condition = torch.zeros_like(pose_condition)
+            ref_pose = torch.zeros_like(ref_pose)
+        
+        if "clip_feature" in inputs:
+            if p >= 0 and p < 0.1:
+                inputs["clip_feature"] = torch.zeros_like(inputs["clip_feature"])
+        
+        if "y" in inputs:
+            if p >= 0 and p < 0.1:
+                inputs["y"] = torch.zeros_like(inputs["y"])
+            inputs["y"] = inputs["y"].to(self.device) + ref_pose
+        
+        additional_condition = rearrange(pose_condition, 'b c f h w -> b (f h w) c').contiguous()
+        print("Running customized training loss")
+        
+        max_timestep_boundary = int(inputs.get("max_timestep_boundary", 1) * self.scheduler.num_train_timesteps)
+        min_timestep_boundary = int(inputs.get("min_timestep_boundary", 0) * self.scheduler.num_train_timesteps)
+        timestep_id = torch.randint(min_timestep_boundary, max_timestep_boundary, (1,))
+        timestep = self.scheduler.timesteps[timestep_id].to(dtype=self.torch_dtype, device=self.device)
+        
+        inputs["latents"] = self.scheduler.add_noise(inputs["input_latents"], inputs["noise"], timestep)
+        training_target = self.scheduler.training_target(inputs["input_latents"], inputs["noise"], timestep)
+        
+        noise_pred = self.model_fn(**inputs, timestep=timestep, add_condition=additional_condition)
+        
+        loss = torch.nn.functional.mse_loss(noise_pred.float(), training_target.float())
+        loss = loss * self.scheduler.training_weight(timestep)
+        self.log("train_loss", loss, prog_bar=True)
+        return loss
 
 
     def enable_vram_management(self, num_persistent_param_in_dit=None, vram_limit=None, vram_buffer=0.5):
@@ -442,6 +486,7 @@ class WanVideoPipeline(BasePipeline):
             # Timestep
             timestep = timestep.unsqueeze(0).to(dtype=self.torch_dtype, device=self.device)
             
+
             # Inference
             noise_pred_posi = self.model_fn(**models, **inputs_shared, **inputs_posi, timestep=timestep)
             if cfg_scale != 1.0:
@@ -827,25 +872,25 @@ class WanVideoUnit_TeaCache(PipelineUnit):
 
 
 
-# class WanVideoUnit_CfgMerger(PipelineUnit):
-#     def __init__(self):
-#         super().__init__(take_over=True)
-#         self.concat_tensor_names = ["context", "clip_feature", "y", "reference_latents"]
+class WanVideoUnit_CfgMerger(PipelineUnit):
+    def __init__(self):
+        super().__init__(take_over=True)
+        self.concat_tensor_names = ["context", "clip_feature", "y", "reference_latents"]
 
-#     def process(self, pipe: WanVideoPipeline, inputs_shared, inputs_posi, inputs_nega):
-#         if not inputs_shared["cfg_merge"]:
-#             return inputs_shared, inputs_posi, inputs_nega
-#         for name in self.concat_tensor_names:
-#             tensor_posi = inputs_posi.get(name)
-#             tensor_nega = inputs_nega.get(name)
-#             tensor_shared = inputs_shared.get(name)
-#             if tensor_posi is not None and tensor_nega is not None:
-#                 inputs_shared[name] = torch.concat((tensor_posi, tensor_nega), dim=0)
-#             elif tensor_shared is not None:
-#                 inputs_shared[name] = torch.concat((tensor_shared, tensor_shared), dim=0)
-#         inputs_posi.clear()
-#         inputs_nega.clear()
-#         return inputs_shared, inputs_posi, inputs_nega
+    def process(self, pipe: WanVideoPipeline, inputs_shared, inputs_posi, inputs_nega):
+        if not inputs_shared["cfg_merge"]:
+            return inputs_shared, inputs_posi, inputs_nega
+        for name in self.concat_tensor_names:
+            tensor_posi = inputs_posi.get(name)
+            tensor_nega = inputs_nega.get(name)
+            tensor_shared = inputs_shared.get(name)
+            if tensor_posi is not None and tensor_nega is not None:
+                inputs_shared[name] = torch.concat((tensor_posi, tensor_nega), dim=0)
+            elif tensor_shared is not None:
+                inputs_shared[name] = torch.concat((tensor_shared, tensor_shared), dim=0)
+        inputs_posi.clear()
+        inputs_nega.clear()
+        return inputs_shared, inputs_posi, inputs_nega
 
 
 
@@ -957,48 +1002,54 @@ class TemporalTiler_BCTHW:
 
 def model_fn_wan_video(
     dit: WanModel,
+    motion_controller: WanMotionControllerModel = None,
+    vace: VaceWanModel = None,
     latents: torch.Tensor = None,
     timestep: torch.Tensor = None,
     context: torch.Tensor = None,
     clip_feature: Optional[torch.Tensor] = None,
     y: Optional[torch.Tensor] = None,
+    reference_latents = None,
+    vace_context = None,
+    vace_scale = 1.0,
     tea_cache: TeaCache = None,
-    add_condition = None,
     use_unified_sequence_parallel: bool = False,
+    motion_bucket_id: Optional[torch.Tensor] = None,
+    sliding_window_size: Optional[int] = None,
+    sliding_window_stride: Optional[int] = None,
+    cfg_merge: bool = False,
     use_gradient_checkpointing: bool = False,
     use_gradient_checkpointing_offload: bool = False,
-    # sliding_window_size: Optional[int] = None,
-    # sliding_window_stride: Optional[int] = None,
-    # cfg_merge: bool = False,
-    # control_camera_latents_input = None,
+    control_camera_latents_input = None,
     fuse_vae_embedding_in_latents: bool = False,
+    add_condition = None,
     **kwargs,
 ):
-    # if sliding_window_size is not None and sliding_window_stride is not None:
-    #     model_kwargs = dict(
-    #         dit=dit,
-    #         motion_controller=motion_controller,
-    #         vace=vace,
-    #         latents=latents,
-    #         timestep=timestep,
-    #         context=context,
-    #         clip_feature=clip_feature,
-    #         y=y,
-    #         reference_latents=reference_latents,
-    #         vace_context=vace_context,
-    #         vace_scale=vace_scale,
-    #         tea_cache=tea_cache,
-    #         use_unified_sequence_parallel=use_unified_sequence_parallel,
-    #         motion_bucket_id=motion_bucket_id,
-    #     )
-    #     return TemporalTiler_BCTHW().run(
-    #         model_fn_wan_video,
-    #         sliding_window_size, sliding_window_stride,
-    #         latents.device, latents.dtype,
-    #         model_kwargs=model_kwargs,
-    #         tensor_names=["latents", "y"],
-    #         batch_size=2 if cfg_merge else 1
-    #     )
+    if sliding_window_size is not None and sliding_window_stride is not None:
+        model_kwargs = dict(
+            dit=dit,
+            motion_controller=motion_controller,
+            vace=vace,
+            latents=latents,
+            timestep=timestep,
+            context=context,
+            clip_feature=clip_feature,
+            y=y,
+            reference_latents=reference_latents,
+            vace_context=vace_context,
+            vace_scale=vace_scale,
+            tea_cache=tea_cache,
+            use_unified_sequence_parallel=use_unified_sequence_parallel,
+            motion_bucket_id=motion_bucket_id,
+        )
+        return TemporalTiler_BCTHW().run(
+            model_fn_wan_video,
+            sliding_window_size, sliding_window_stride,
+            latents.device, latents.dtype,
+            model_kwargs=model_kwargs,
+            tensor_names=["latents", "y"],
+            batch_size=2 if cfg_merge else 1
+        )
     
     if use_unified_sequence_parallel:
         import torch.distributed as dist

@@ -26,6 +26,8 @@ sys.path.append("../../")
 
 parser = argparse.ArgumentParser(description="UniAnimate-WAN inference script")
 parser.add_argument("--lora-path", dest="lora_path", type=str, required=True, help="Path to LoRA checkpoint .ckpt file")
+parser.add_argument("--test-image-name", dest="test_image_name", type=str, required=True, help="Name of the test image")
+parser.add_argument("--test-image-type", dest="test_image_type", type=str, required=True, help="Type of the test image")
 args = parser.parse_args()
 
 
@@ -36,12 +38,14 @@ seed = 11
 max_frames = None
 use_teacache = False
 lora_path = args.lora_path
+test_image_name = args.test_image_name
+test_image_type = args.test_image_type
 
 
 
 test_list_path= [
     # Format: [frame_interval, reference image, driving pose sequence]
-    [1, "data/pix/black_male.png", "data/saved_pose/black_male"],
+    [1, "data/pix/{}.{}".format(test_image_name, test_image_type), "data/saved_pose/{}".format(test_image_name)],
 ]
 
 misc_size = [height,width]
@@ -255,7 +259,7 @@ for path_dir_per in test_list_path:
     output_dir = os.path.join("outputs", model_name)
     os.makedirs(output_dir, exist_ok=True)
     # construct video file name and save into the model-specific folder
-    video_filename = f"{model_name}_{pose_file_path.split('/')[-1]}.mp4"
+    video_filename = f"long_video_{model_name}_{pose_file_path.split('/')[-1]}.mp4"
     print("Saving video to ", os.path.join(output_dir, video_filename))
     save_video(video_out, os.path.join(output_dir, video_filename), fps=30, quality=5)
 
