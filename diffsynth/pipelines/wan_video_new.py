@@ -23,11 +23,11 @@ from ..models.wan_video_vace import VaceWanModel
 from ..models.wan_video_motion_controller import WanMotionControllerModel
 from ..schedulers.flow_match import FlowMatchScheduler
 from ..prompters import WanPrompter
-from ..vram_management import enable_vram_management, AutoWrappedModule, AutoWrappedLinear, WanAutoCastLayerNorm
+from ..vram_management_wan_new import enable_vram_management, AutoWrappedModule, AutoWrappedLinear, WanAutoCastLayerNorm
 from ..lora import GeneralLoRALoader
 import torch.nn as nn
 
-class PixPosePipeline(BasePipeline):
+class WanVideoPipeline(BasePipeline):
 
     def __init__(self, device="cuda", torch_dtype=torch.bfloat16, tokenizer_path=None):
         super().__init__(
@@ -52,7 +52,7 @@ class PixPosePipeline(BasePipeline):
             WanVideoUnit_ImageEmbedderVAE(),
             WanVideoUnit_ImageEmbedderCLIP(),
             WanVideoUnit_ImageEmbedderFused(),
-            # WanVideoUnit_UnifiedSequenceParallel(),
+            WanVideoUnit_UnifiedSequenceParallel(),
             WanVideoUnit_TeaCache(),
             WanVideoUnit_CfgMerger(),
         ]
@@ -289,56 +289,32 @@ class PixPosePipeline(BasePipeline):
             )
             
             
-    # def initialize_usp(self):
-    #     import torch.distributed as dist
-    #     from xfuser.core.distributed import initialize_model_parallel, init_distributed_environment
-    #     dist.init_process_group(backend="nccl", init_method="env://")
-    #     init_distributed_environment(rank=dist.get_rank(), world_size=dist.get_world_size())
-    #     initialize_model_parallel(
-    #         sequence_parallel_degree=dist.get_world_size(),
-    #         ring_degree=1,
-    #         ulysses_degree=dist.get_world_size(),
-    #     )
-    #     torch.cuda.set_device(dist.get_rank())
+    def initialize_usp(self):
+        import torch.distributed as dist
+        from xfuser.core.distributed import initialize_model_parallel, init_distributed_environment
+        dist.init_process_group(backend="nccl", init_method="env://")
+        init_distributed_environment(rank=dist.get_rank(), world_size=dist.get_world_size())
+        initialize_model_parallel(
+            sequence_parallel_degree=dist.get_world_size(),
+            ring_degree=1,
+            ulysses_degree=dist.get_world_size(),
+        )
+        torch.cuda.set_device(dist.get_rank())
             
             
-    # def enable_usp(self):
-    #     from xfuser.core.distributed import get_sequence_parallel_world_size
-    #     from ..distributed.xdit_context_parallel import usp_attn_forward, usp_dit_forward
+    def enable_usp(self):
+        from xfuser.core.distributed import get_sequence_parallel_world_size
+        from ..distributed.xdit_context_parallel import usp_attn_forward, usp_dit_forward
 
-    #     for block in self.dit.blocks:
-    #         block.self_attn.forward = types.MethodType(usp_attn_forward, block.self_attn)
-    #     self.dit.forward = types.MethodType(usp_dit_forward, self.dit)
-    #     if self.dit2 is not None:
-    #         for block in self.dit2.blocks:
-    #             block.self_attn.forward = types.MethodType(usp_attn_forward, block.self_attn)
-    #         self.dit2.forward = types.MethodType(usp_dit_forward, self.dit2)
-    #     self.sp_size = get_sequence_parallel_world_size()
-    #     self.use_unified_sequence_parallel = True
-
-
-    def fetch_models(self, model_manager: ModelManager):
-        text_encoder_model_and_path = model_manager.fetch_model("wan_video_text_encoder", require_model_path=True)
-        if text_encoder_model_and_path is not None:
-            self.text_encoder, tokenizer_path = text_encoder_model_and_path
-            self.prompter.fetch_models(self.text_encoder)
-            self.prompter.fetch_tokenizer(os.path.join(os.path.dirname(tokenizer_path), "google/umt5-xxl"))
-        self.dit = model_manager.fetch_model("wan_video_dit", index=2)
-        if isinstance(self.dit, list):
-            self.dit, self.dit2 = self.dit
-        else:
-            self.dit2 = None
-        self.vae = model_manager.fetch_model("wan_video_vae")
-        self.image_encoder = model_manager.fetch_model("wan_video_image_encoder")
-
-
-    @staticmethod
-    def from_model_manager(model_manager: ModelManager, torch_dtype=None, device=None):
-        if device is None: device = model_manager.device
-        if torch_dtype is None: torch_dtype = model_manager.torch_dtype
-        pipe = WanVideoPipeline(device=device, torch_dtype=torch_dtype)
-        pipe.fetch_models(model_manager)
-        return pipe
+        for block in self.dit.blocks:
+            block.self_attn.forward = types.MethodType(usp_attn_forward, block.self_attn)
+        self.dit.forward = types.MethodType(usp_dit_forward, self.dit)
+        if self.dit2 is not None:
+            for block in self.dit2.blocks:
+                block.self_attn.forward = types.MethodType(usp_attn_forward, block.self_attn)
+            self.dit2.forward = types.MethodType(usp_dit_forward, self.dit2)
+        self.sp_size = get_sequence_parallel_world_size()
+        self.use_unified_sequence_parallel = True
 
     @staticmethod
     def from_pretrained(
@@ -365,7 +341,7 @@ class PixPosePipeline(BasePipeline):
         
         # Initialize pipeline
         pipe = WanVideoPipeline(device=device, torch_dtype=torch_dtype)
-        # if use_usp: pipe.initialize_usp()
+        if use_usp: pipe.initialize_usp()
         
         # Download and load models
         model_manager = ModelManager()
@@ -400,7 +376,7 @@ class PixPosePipeline(BasePipeline):
         pipe.prompter.fetch_tokenizer(tokenizer_config.path)
         
         # Unified Sequence Parallel
-        # if use_usp: pipe.enable_usp()
+        if use_usp: pipe.enable_usp()
         return pipe
 
     @torch.no_grad()
@@ -845,15 +821,15 @@ class WanVideoUnit_ImageEmbedderFused(PipelineUnit):
 
 
 
-# class WanVideoUnit_UnifiedSequenceParallel(PipelineUnit):
-#     def __init__(self):
-#         super().__init__(input_params=())
+class WanVideoUnit_UnifiedSequenceParallel(PipelineUnit):
+    def __init__(self):
+        super().__init__(input_params=())
 
-#     def process(self, pipe: WanVideoPipeline):
-#         if hasattr(pipe, "use_unified_sequence_parallel"):
-#             if pipe.use_unified_sequence_parallel:
-#                 return {"use_unified_sequence_parallel": True}
-#         return {}
+    def process(self, pipe: WanVideoPipeline):
+        if hasattr(pipe, "use_unified_sequence_parallel"):
+            if pipe.use_unified_sequence_parallel:
+                return {"use_unified_sequence_parallel": True}
+        return {}
 
 
 

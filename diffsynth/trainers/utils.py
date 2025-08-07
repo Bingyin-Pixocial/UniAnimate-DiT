@@ -417,7 +417,8 @@ def launch_data_process_task(model: DiffusionTrainingModule, dataset, output_pat
 
 def wan_parser():
     parser = argparse.ArgumentParser(description="Simple example of a training script.")
-    parser.add_argument("--dataset_base_path", type=str, default="", required=True, help="Base path of the dataset.")
+    parser.add_argument("--custom_dataset_path", type=str, default="", help="Custom dataset path.")
+    parser.add_argument("--dataset_base_path", type=str, default="", help="Base path of the dataset.")
     parser.add_argument("--dataset_metadata_path", type=str, default=None, help="Path to the metadata file of the dataset.")
     parser.add_argument("--max_pixels", type=int, default=1280*720, help="Maximum number of pixels per frame, used for dynamic resolution..")
     parser.add_argument("--height", type=int, default=None, help="Height of images or videos. Leave `height` and `width` empty to enable dynamic resolution.")

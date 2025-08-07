@@ -1,0 +1,36 @@
+Metadata-Version: 2.4
+Name: pixpose
+Version: 1.0.0
+Summary: PixPose: Pose-guided Video Generation
+Author: PixPose Team
+Requires-Dist: torch>=2.0.0
+Requires-Dist: torchvision
+Requires-Dist: cupy-cuda12x
+Requires-Dist: transformers==4.46.2
+Requires-Dist: controlnet-aux==0.0.7
+Requires-Dist: imageio
+Requires-Dist: imageio[ffmpeg]
+Requires-Dist: safetensors
+Requires-Dist: einops
+Requires-Dist: sentencepiece
+Requires-Dist: protobuf
+Requires-Dist: modelscope
+Requires-Dist: ftfy
+Requires-Dist: matplotlib
+Requires-Dist: onnxruntime
+Requires-Dist: opencv-python
+Requires-Dist: matplotlib
+Requires-Dist: requests
+Requires-Dist: scikit-learn
+Requires-Dist: flatbuffers
+Requires-Dist: packaging
+Requires-Dist: pydantic>=2.9.2
+Requires-Dist: PyYAML
+Requires-Dist: accelerate
+Requires-Dist: deepspeed
+Requires-Dist: pandas
+Requires-Dist: peft
+Requires-Dist: ipdb
+Dynamic: author
+Dynamic: requires-dist
+Dynamic: summary

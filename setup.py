@@ -13,18 +13,11 @@ else:
     install_requires = []
 
 setup(
-    name="diffsynth",
-    version="1.1.2",
-    description="Enjoy the magic of Diffusion models!",
-    author="Artiprocher",
+    name="pixpose",
+    version="1.0.0",
+    description="PixPose: Pose-guided Video Generation",
+    author="PixPose Team",
     packages=find_packages(),
     install_requires=install_requires,
     include_package_data=True,
-    classifiers=[
-        "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: Apache Software License",
-        "Operating System :: OS Independent",
-    ],
-    package_data={"diffsynth": ["tokenizer_configs/**/**/*.*"]},
-    python_requires='>=3.6',
 )

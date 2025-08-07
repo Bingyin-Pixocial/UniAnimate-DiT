@@ -17,8 +17,8 @@ import torch.nn.functional as F
 import torchvision.transforms as T
 from PIL import Image, ImageFilter
 import  torch.nn  as nn
-from diffsynth.pipelines.wan_video_new import PixPosePipeline, ModelConfig
-from diffsynth.trainers.utils import DiffusionTrainingModule, VideoDataset, ModelLogger, launch_training_task, wan_parser
+from diffsynth.pipelines.wan_video_new import WanVideoPipeline, ModelConfig
+from diffsynth.trainers.utils import DiffusionTrainingModule, ModelLogger, launch_training_task, wan_parser
 from diffsynth.models.utils import load_state_dict, load_state_dict_from_folder
 import json
 
@@ -328,7 +328,7 @@ class WanTrainingModule(DiffusionTrainingModule):
         if model_id_with_origin_paths is not None:
             model_id_with_origin_paths = model_id_with_origin_paths.split(",")
             model_configs += [ModelConfig(model_id=i.split(":")[0], origin_file_pattern=i.split(":")[1]) for i in model_id_with_origin_paths]
-        self.pipe = PixPosePipeline.from_pretrained(torch_dtype=torch.bfloat16, device="cpu", model_configs=model_configs)
+        self.pipe = WanVideoPipeline.from_pretrained(torch_dtype=torch.bfloat16, device="cpu", model_configs=model_configs)
 
 
         # Reset training scheduler
@@ -487,6 +487,7 @@ if __name__ == "__main__":
         width=args.width, 
         is_i2v=True,
         )
+    print("!!! dataset loaded")
     model = WanTrainingModule(
         model_paths=args.model_paths,
         model_id_with_origin_paths=args.model_id_with_origin_paths,
@@ -497,21 +498,21 @@ if __name__ == "__main__":
         use_gradient_checkpointing_offload=args.use_gradient_checkpointing_offload,
         extra_inputs=args.extra_inputs,
         max_timestep_boundary=args.max_timestep_boundary,
-        min_timestep_boundary=args.min_timestep_boundary,
-        tiled=args.tiled,
-        tile_size=(args.tile_size_height, args.tile_size_width),
-        tile_stride=(args.tile_stride_height, args.tile_stride_width),
+        min_timestep_boundary=args.min_timestep_boundary
     )
+    print("!!! model loaded")
     model_logger = ModelLogger(
         args.output_path,
         remove_prefix_in_ckpt=args.remove_prefix_in_ckpt
     )
     optimizer = torch.optim.AdamW([model.trainable_modules(), model.dwpose_embedding.parameters(), model.randomref_embedding_pose.parameters()], lr=args.learning_rate)
     scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer)
+    print("!!! optimizer and scheduler have been initialized")
     launch_training_task(
         dataset, model, model_logger, optimizer, scheduler,
         num_epochs=args.num_epochs,
         gradient_accumulation_steps=args.gradient_accumulation_steps,
     )
+    print("!!! training task launched")
 
         

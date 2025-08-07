@@ -520,7 +520,7 @@ class ModelManager:
             from ipdb import set_trace; set_trace()
             print(f"    We cannot detect the model type. No models are loaded.")
         
-
+        
     def load_models(self, file_path_list, model_names=None, device=None, torch_dtype=None):
         for file_path in file_path_list:
             self.load_model(file_path, model_names, device=device, torch_dtype=torch_dtype)
