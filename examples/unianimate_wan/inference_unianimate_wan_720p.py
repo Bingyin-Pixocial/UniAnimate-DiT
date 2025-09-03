@@ -28,12 +28,14 @@ use_teacache = False
 
 test_list_path= [
     # Format: [frame_interval, reference image, driving pose sequence]
-    [1, "data/images/WOMEN-Blouses_Shirts-id_00004955-01_4_full.jpg", "data/saved_pose/WOMEN-Blouses_Shirts-id_00004955-01_4_full"],
-    [1, "data/images/musk.jpg", "data/saved_pose/musk"],
-    [1, "data/images/WOMEN-Blouses_Shirts-id_00005125-03_4_full.jpg", "data/saved_pose/WOMEN-Blouses_Shirts-id_00005125-03_4_full"],
-    [1, "data/images/IMG_20240514_104337.jpg", "data/saved_pose/IMG_20240514_104337"],
-    [1, "data/images/10.jpg", "data/saved_pose/10"],
-    [1, "data/images/taiyi2.jpg", "data/saved_pose/taiyi2"],
+    [1, "data/images/3.jpg", "data/saved_pose/3"],
+    [1, "data/images/4.jpg", "data/saved_pose/4"],
+    # [1, "data/images/WOMEN-Blouses_Shirts-id_00004955-01_4_full.jpg", "data/saved_pose/WOMEN-Blouses_Shirts-id_00004955-01_4_full"],
+    # [1, "data/images/musk.jpg", "data/saved_pose/musk"],
+    # [1, "data/images/WOMEN-Blouses_Shirts-id_00005125-03_4_full.jpg", "data/saved_pose/WOMEN-Blouses_Shirts-id_00005125-03_4_full"],
+    # [1, "data/images/IMG_20240514_104337.jpg", "data/saved_pose/IMG_20240514_104337"],
+    # [1, "data/images/10.jpg", "data/saved_pose/10"],
+    # [1, "data/images/taiyi2.jpg", "data/saved_pose/taiyi2"],
 ]
 
 misc_size = [height,width]
@@ -234,12 +236,15 @@ for path_dir_per in test_list_path:
 
     )
 
+    # Save only the generated frames (right column) instead of concatenated frames
     video_out = []
     for ii in range(len(video)):
         ss = video[ii]
-        video_out.append(image_compose_width(video_out_condition[ii], ss))
+        video_out.append(ss)  # Only save the generated frame, not the concatenated version
+    
+    
     os.makedirs("./outputs", exist_ok=True)
-    save_video(video_out, "outputs/video_720P_{}_{}.mp4".format(ref_image_path.split('/')[-1], pose_file_path.split('/')[-1]), fps=15, quality=5)
+    save_video(video_out, "outputs/ua_dit_30fps_{}_{}.mp4".format(ref_image_path.split('/')[-1], pose_file_path.split('/')[-1]), fps=30, quality=5)
 
 
     # CUDA_VISIBLE_DEVICES="0" python examples/unianimate_wan/inference_unianimate_wan_720p.py

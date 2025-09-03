@@ -1,3 +1,7 @@
+import os, sys
+# insert project root (two levels up from this file) onto Python’s module search path
+ROOT = os.path.abspath(os.path.join(__file__, "..", "..", ".."))
+sys.path.insert(0, ROOT)
 import torch
 from diffsynth import ModelManager, WanVideoPipeline, save_video, VideoData, WanUniAnimateLongVideoPipeline
 from modelscope import snapshot_download, dataset_snapshot_download
@@ -20,20 +24,19 @@ import sys
 sys.path.append("../../")  
 
 # define hight and width
-height = 1280
-width = 720
+height = 1024
+width = 576
 seed = 11
 max_frames = None
 use_teacache = False
 
 test_list_path= [
     # Format: [frame_interval, reference image, driving pose sequence]
-    [1, "data/images/WOMEN-Blouses_Shirts-id_00004955-01_4_full.jpg", "data/saved_pose/WOMEN-Blouses_Shirts-id_00004955-01_4_full"],
-    [1, "data/images/musk.jpg", "data/saved_pose/musk"],
-    [1, "data/images/WOMEN-Blouses_Shirts-id_00005125-03_4_full.jpg", "data/saved_pose/WOMEN-Blouses_Shirts-id_00005125-03_4_full"],
-    [1, "data/images/IMG_20240514_104337.jpg", "data/saved_pose/IMG_20240514_104337"],
-    [1, "data/images/10.jpg", "data/saved_pose/10"],
-    [1, "data/images/taiyi2.jpg", "data/saved_pose/taiyi2"],
+    [1, "data/pix/aunt.jpeg", "data/saved_pose/aunt"],
+    [1, "data/pix/chick.png", "data/saved_pose/chick"],
+    [1, "data/pix/man.png", "data/saved_pose/man"],
+    # [1, "data/pix/real_dog.jpg", "data/saved_pose/real_dog"],
+    # [1, "data/pix/my_world_women.png", "data/saved_pose/my_world_women"],
 ]
 
 misc_size = [height,width]
@@ -114,7 +117,7 @@ for path_dir_per in test_list_path:
 
     stride = sample_fps
     _total_frame_num = len(frames_all)
-    max_frames = _total_frame_num//sample_fps
+    max_frames = _total_frame_num//sample_fps if max_frames is None else max_frames
     cover_frame_num = (stride * max_frames)
     
     if _total_frame_num < cover_frame_num + 1:
@@ -215,6 +218,14 @@ for path_dir_per in test_list_path:
             (height, width),
             interpolation=torchvision.transforms.InterpolationMode.BILINEAR
         )))
+    
+    # Print video_out_condition structure
+    print(f"Video_out_condition type: {type(video_out_condition)}")
+    print(f"Video_out_condition length: {len(video_out_condition)}")
+    if len(video_out_condition) > 0:
+        print(f"First condition frame type: {type(video_out_condition[0])}")
+        print(f"First condition frame size: {video_out_condition[0].size}")
+        print(f"First condition frame mode: {video_out_condition[0].mode}")
 
     # Image-to-video
     video = pipe(
@@ -235,13 +246,32 @@ for path_dir_per in test_list_path:
         tea_cache_l1_thresh=0.3 if use_teacache else None,
         tea_cache_model_id="Wan2.1-I2V-14B-720P" if use_teacache else None,
     )
-
+    
+    # Print video output type and structure
+    print(f"Video output type: {type(video)}")
+    print(f"Video output length: {len(video)}")
+    if len(video) > 0:
+        print(f"First frame type: {type(video[0])}")
+        print(f"First frame shape/size: {video[0].shape if hasattr(video[0], 'shape') else video[0].size}")
+        print(f"First frame mode: {video[0].mode if hasattr(video[0], 'mode') else 'N/A'}")
+    
+    # Save only the generated frames (right column) instead of concatenated frames
     video_out = []
     for ii in range(len(video)):
         ss = video[ii]
-        video_out.append(image_compose_width(video_out_condition[ii], ss))
+        video_out.append(ss)  # Only save the generated frame, not the concatenated version
+    
+    # Print final video_out structure
+    print(f"Final video_out type: {type(video_out)}")
+    print(f"Final video_out length: {len(video_out)}")
+    if len(video_out) > 0:
+        print(f"Final first frame type: {type(video_out[0])}")
+        print(f"Final first frame size: {video_out[0].size}")
+        print(f"Final first frame mode: {video_out[0].mode}")
+    
     os.makedirs("./outputs", exist_ok=True)
-    save_video(video_out, "outputs/video_720P_long_{}_{}.mp4".format(ref_image_path.split('/')[-1], pose_file_path.split('/')[-1]), fps=15, quality=5)
+    save_video(video_out, "outputs/{}_{}.mp4".format(ref_image_path.split('/')[-1], pose_file_path.split('/')[-1]), fps=30, quality=5)
 
+    
 
     # CUDA_VISIBLE_DEVICES="1" python examples/unianimate_wan/inference_unianimate_wan_long_video_480p.py
