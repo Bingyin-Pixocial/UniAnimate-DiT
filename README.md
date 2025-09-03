@@ -165,9 +165,20 @@ huggingface-cli download ZheWang123/UniAnimate-DiT --local-dir ./checkpoints
 └---- yolox_l.onnx
 ```
 
+### (3) Improved pose alignment developed by Bingyin:
+**A. For images that DWPose can extract the skeleton, run:**
+```
+bash run_dwpose_alignment.sh
+```
+
+**B. For images that DWPose cannot extract the skeleton, run:**
+```
+bash run_xpose_alignment.sh
+```
 
 
-### (3) Pose alignment 
+
+### (4) Pose alignment 
 
 Rescale the target pose sequence to match the pose of the reference image (you can also install `pip install onnxruntime-gpu==1.18.1` for faster extraction on GPU.):
 ```
@@ -192,7 +203,7 @@ python run_align_pose.py  --ref_name data/images/taiyi2.jpg --source_video_paths
 The processed target pose for demo videos will be in ```data/saved_pose```. `--ref_name` denotes the path of reference image, `--source_video_paths` provides the source poses, `--saved_pose_dir` means the path of processed target poses.
 
 
-### (4) Run UniAnimate-DiT-14B to generate 480P videos
+### (5) Run UniAnimate-DiT-14B to generate 480P videos
 
 ```
 CUDA_VISIBLE_DEVICES="0" python examples/unianimate_wan/inference_unianimate_wan_480p.py
@@ -223,7 +234,7 @@ For long video generation, run the following comment, the tips above can also be
 CUDA_VISIBLE_DEVICES="0" python examples/unianimate_wan/inference_unianimate_wan_long_video_480p.py
 ```
 
-### (5) Run UniAnimate-DiT-14B to generate 720P videos
+### (6) Run UniAnimate-DiT-14B to generate 720P videos
 
 ```
 CUDA_VISIBLE_DEVICES="0" python examples/unianimate_wan/inference_unianimate_wan_720p.py
