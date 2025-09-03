@@ -167,8 +167,6 @@ class DWposeDetector:
 
 def draw_pose(pose, H, W):
     bodies = pose['bodies']
-    # print("!!!bodies", bodies)
-    # assert 0 == 1
     faces = pose['faces']
     hands = pose['hands']
     candidate = bodies['candidate']
@@ -232,39 +230,25 @@ def mp_main(args):
     os.makedirs(save_motion, exist_ok=True)
     save_warp = args.saved_pose_dir
     # os.makedirs(save_warp, exist_ok=True)
-    video_char_image = args.video_char_image
     
     ref_frame = cv2.imread(ref_name, cv2.IMREAD_COLOR)
-    base_char_image = cv2.imread(video_char_image, cv2.IMREAD_COLOR)
     
     
     pose_ref = dw_func(i, ref_frame, dwpose_model)
-    # print("pose_ref is:", pose_ref)
 
     dwpose_woface, dwpose_wface = draw_pose(pose_ref, H=768, W=512)
+    
+    
 
-    base_char_pose = dwpose_model(base_char_image)
-    char, char_wface = draw_pose(base_char_pose, H=768, W=512)
-    img_path = save_motion+'/' + 'char.jpg'
-    cv2.imwrite(img_path, char)
-
-    bodies = base_char_pose['bodies']
+    bodies = results_vis[0]['bodies']
+    faces = results_vis[0]['faces']
+    hands = results_vis[0]['hands']
     candidate = bodies['candidate']
-    
-    
-
-    # bodies = results_vis[0]['bodies']
-    # faces = results_vis[0]['faces']
-    # hands = results_vis[0]['hands']
-    # candidate = bodies['candidate']
 
     ref_bodies = pose_ref['bodies']
     ref_faces = pose_ref['faces']
     ref_hands = pose_ref['hands']
     ref_candidate = ref_bodies['candidate']
-    # print("ref_candidate", ref_candidate)
-    # print("ref_candidate shape is:", ref_candidate.shape)
-    # assert 0 == 1
 
 
     ref_2_x = ref_candidate[2][0]
@@ -714,7 +698,7 @@ def mp_main(args):
     
     dwpose_woface, dwpose_wface = draw_pose(pose_ref, H=768, W=512)
     img_path = save_warp+'/' + 'pose.jpg'
-    # cv2.imwrite(img_path, dwpose_woface)
+    cv2.imwrite(img_path, dwpose_woface)
 
 
 logger = get_logger('dw pose extraction')
@@ -723,8 +707,7 @@ logger = get_logger('dw pose extraction')
 if __name__=='__main__':
     def parse_args(): 
         parser = argparse.ArgumentParser(description="Simple example of a training script.")
-        parser.add_argument("--ref_name", type=str, required=True, default="data/images/IMG_20240514_104337.jpg",)
-        parser.add_argument("--video_char_image", type=str, required=True, default="",)
+        parser.add_argument("--ref_name", type=str, default="data/images/IMG_20240514_104337.jpg",)
         parser.add_argument("--source_video_paths", type=str, default="data/videos/source_video.mp4",)
         parser.add_argument("--saved_pose_dir", type=str, default="data/saved_pose/IMG_20240514_104337",)
         args = parser.parse_args()
