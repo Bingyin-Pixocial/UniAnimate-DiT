@@ -90,26 +90,42 @@ def map_xpose_to_20kpts(pose_17x2: np.ndarray) -> np.ndarray:
     pose_20x2[1] = (left_shoulder + right_shoulder) / 2  # Neck (mid-shoulder)
 
     # Upper Body
-    pose_20x2[2] = left_shoulder
-    pose_20x2[3] = left_elbow
-    pose_20x2[4] = left_wrist
-    pose_20x2[5] = right_shoulder
-    pose_20x2[6] = right_elbow
-    pose_20x2[7] = right_wrist
+    pose_20x2[2] = right_shoulder
+    pose_20x2[3] = right_elbow
+    pose_20x2[4] = right_wrist
+    pose_20x2[5] = left_shoulder
+    pose_20x2[6] = left_elbow
+    pose_20x2[7] = left_wrist
+    # pose_20x2[2] = left_shoulder
+    # pose_20x2[3] = left_elbow
+    # pose_20x2[4] = left_wrist
+    # pose_20x2[5] = right_shoulder
+    # pose_20x2[6] = right_elbow
+    # pose_20x2[7] = right_wrist
 
     # Lower Body
-    pose_20x2[8]  = left_hip
-    pose_20x2[9]  = left_knee
-    pose_20x2[10] = left_ankle
-    pose_20x2[11] = right_hip
-    pose_20x2[12] = right_knee
-    pose_20x2[13] = right_ankle
+    pose_20x2[8]  = right_hip
+    pose_20x2[9]  = right_knee
+    pose_20x2[10] = right_ankle
+    pose_20x2[11] = left_hip
+    pose_20x2[12] = left_knee
+    pose_20x2[13] = left_ankle
+    # pose_20x2[8]  = left_hip
+    # pose_20x2[9]  = left_knee
+    # pose_20x2[10] = left_ankle
+    # pose_20x2[11] = right_hip
+    # pose_20x2[12] = right_knee
+    # pose_20x2[13] = right_ankle
 
     # Head Features
-    pose_20x2[14] = left_eye
-    pose_20x2[15] = right_eye
-    pose_20x2[16] = left_ear
-    pose_20x2[17] = right_ear
+    pose_20x2[14] = right_eye
+    pose_20x2[15] = left_eye
+    pose_20x2[16] = right_ear
+    pose_20x2[17] = left_ear
+    # pose_20x2[14] = left_eye
+    # pose_20x2[15] = right_eye
+    # pose_20x2[16] = left_ear
+    # pose_20x2[17] = right_ear
 
     # Foot Keypoints: 外推脚底位置
     # 使用 knee -> ankle 向量方向延伸，模拟脚底
@@ -118,8 +134,10 @@ def map_xpose_to_20kpts(pose_17x2: np.ndarray) -> np.ndarray:
 
     # 延伸 0.5 倍腿长作为脚底偏移（可调）
     foot_length_factor = 0.5
-    pose_20x2[18] = left_ankle + left_leg_vec * foot_length_factor  # Left Foot
-    pose_20x2[19] = right_ankle + right_leg_vec * foot_length_factor  # Right Foot
+    # pose_20x2[18] = left_ankle + left_leg_vec * foot_length_factor  # Left Foot
+    # pose_20x2[19] = right_ankle + right_leg_vec * foot_length_factor  # Right Foot
+    pose_20x2[18] = right_ankle + right_leg_vec * foot_length_factor  # Left Foot
+    pose_20x2[19] = left_ankle + left_leg_vec * foot_length_factor  # Right Foot
 
     return pose_20x2
 
