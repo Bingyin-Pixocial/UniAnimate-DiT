@@ -5,6 +5,7 @@
 # 4th Edited by ControlNet (added face and correct hands)
 
 import os
+from re import X
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 import cv2
 import torch
@@ -32,194 +33,6 @@ import sys
 import dwpose.util as util
 from dwpose.wholebody import Wholebody
 
-
-eps = 0.01
-
-def load_xpose_pose(xpose_pose_path):
-    pose = np.load(xpose_pose_path, allow_pickle=True).item()
-    num_kpts = len(pose['keypoint_text_prompt'])
-    H, W = pose["size"] 
-    for idx, ann in enumerate(pose['keypoints']):
-        kp = np.array(ann.cpu())
-        Z = kp[:num_kpts*2] * np.array([W, H] * num_kpts)
-        x = Z[0::2]
-        y = Z[1::2]
-                
-        # Convert keypoints to candidate format (normalized coordinates)
-        candidate = []
-        for i in range(num_kpts):
-            candidate.append([x[i] / float(W), y[i] / float(H)])
-        candidate = np.array(candidate)
-    return candidate
-
-def map_xpose_to_20kpts(pose_17x2: np.ndarray) -> np.ndarray:
-    """
-    将 xpose 输出的 17x2 关键点映射为 20x2 自定义格式。
-    
-    输入:
-        pose_17x2: numpy array of shape (17, 2), 坐标范围 [0,1] 归一化
-    输出:
-        pose_20x2: numpy array of shape (20, 2)
-    """
-    assert pose_17x2.shape == (17, 2), "Input must be 17x2 array"
-
-    # 初始化 20x2 数组
-    pose_20x2 = np.zeros((20, 2), dtype=np.float32)
-    
-    # 提取原始点（归一化坐标）
-    nose            = pose_17x2[0]   # 0
-    left_eye        = pose_17x2[1]   # 1
-    right_eye       = pose_17x2[2]   # 2
-    left_ear        = pose_17x2[3]   # 3
-    right_ear       = pose_17x2[4]   # 4
-    left_shoulder   = pose_17x2[5]   # 5
-    right_shoulder  = pose_17x2[6]   # 6
-    left_elbow      = pose_17x2[7]   # 7
-    right_elbow     = pose_17x2[8]   # 8
-    left_wrist      = pose_17x2[9]   # 9
-    right_wrist     = pose_17x2[10]  # 10
-    left_hip        = pose_17x2[11]  # 11
-    right_hip       = pose_17x2[12]  # 12
-    left_knee       = pose_17x2[13]  # 13
-    right_knee      = pose_17x2[14]  # 14
-    left_ankle      = pose_17x2[15]  # 15
-    right_ankle     = pose_17x2[16]  # 16
-
-    # Head Region
-    pose_20x2[0] = nose                    # Nose
-    pose_20x2[1] = (left_shoulder + right_shoulder) / 2  # Neck (mid-shoulder)
-
-    # Upper Body
-    pose_20x2[2] = right_shoulder
-    pose_20x2[3] = right_elbow
-    pose_20x2[4] = right_wrist
-    pose_20x2[5] = left_shoulder
-    pose_20x2[6] = left_elbow
-    pose_20x2[7] = left_wrist
-    # pose_20x2[2] = left_shoulder
-    # pose_20x2[3] = left_elbow
-    # pose_20x2[4] = left_wrist
-    # pose_20x2[5] = right_shoulder
-    # pose_20x2[6] = right_elbow
-    # pose_20x2[7] = right_wrist
-
-    # Lower Body
-    pose_20x2[8]  = right_hip
-    pose_20x2[9]  = right_knee
-    pose_20x2[10] = right_ankle
-    pose_20x2[11] = left_hip
-    pose_20x2[12] = left_knee
-    pose_20x2[13] = left_ankle
-    # pose_20x2[8]  = left_hip
-    # pose_20x2[9]  = left_knee
-    # pose_20x2[10] = left_ankle
-    # pose_20x2[11] = right_hip
-    # pose_20x2[12] = right_knee
-    # pose_20x2[13] = right_ankle
-
-    # Head Features
-    pose_20x2[14] = right_eye
-    pose_20x2[15] = left_eye
-    pose_20x2[16] = right_ear
-    pose_20x2[17] = left_ear
-    # pose_20x2[14] = left_eye
-    # pose_20x2[15] = right_eye
-    # pose_20x2[16] = left_ear
-    # pose_20x2[17] = right_ear
-
-    # Foot Keypoints: 外推脚底位置
-    # 使用 knee -> ankle 向量方向延伸，模拟脚底
-    left_leg_vec = left_ankle - left_knee
-    right_leg_vec = right_ankle - right_knee
-
-    # 延伸 0.5 倍腿长作为脚底偏移（可调）
-    foot_length_factor = 0.5
-    # pose_20x2[18] = left_ankle + left_leg_vec * foot_length_factor  # Left Foot
-    # pose_20x2[19] = right_ankle + right_leg_vec * foot_length_factor  # Right Foot
-    pose_20x2[19] = right_ankle + right_leg_vec * foot_length_factor  # Left Foot
-    pose_20x2[18] = left_ankle + left_leg_vec * foot_length_factor  # Right Foot
-
-    return pose_20x2
-
-def draw_pose_skeleton_v2_style(tgt, keypoint_skeleton, keypoint_text_prompt, output_dir):
-    """
-    Draw pose skeleton in v2 style - on blank canvas with v2 colors and drawing method
-    """
-    num_kpts = len(keypoint_text_prompt)
-    H, W = tgt["size"]
-    
-    # Create blank canvas like v2
-    canvas = np.zeros(shape=(H, W, 3), dtype=np.uint8)
-    
-    # Use v2 colors
-    colors = [[255, 0, 0], [255, 85, 0], [255, 170, 0], [255, 255, 0], [170, 255, 0], [85, 255, 0], [0, 255, 0], \
-              [0, 255, 85], [0, 255, 170], [0, 255, 255], [0, 170, 255], [0, 85, 255], [0, 0, 255], [85, 0, 255], \
-              [170, 0, 255], [255, 0, 255], [255, 0, 170], [255, 0, 85], [170, 255, 255], [255, 255, 0]]
-    
-    stickwidth = 4
-    
-    if 'keypoints' in tgt:
-        sks = np.array(keypoint_skeleton)
-        
-        # Handle skeleton indexing (convert to 0-based if needed)
-        if len(sks) > 0:
-            if sks.min() == 1:
-                sks = sks - 1
-        
-        for idx, ann in enumerate(tgt['keypoints']):
-            kp = np.array(ann.cpu())
-            Z = kp[:num_kpts*2] * np.array([W, H] * num_kpts)
-            x = Z[0::2]
-            y = Z[1::2]
-            
-            # Convert keypoints to candidate format (normalized coordinates)
-            candidate = []
-            for i in range(num_kpts):
-                candidate.append([x[i] / float(W), y[i] / float(H)])
-            candidate = np.array(candidate)
-            
-            # Draw skeleton connections using v2 style
-            for i, sk in enumerate(sks):
-                if i >= len(colors):
-                    color_idx = i % len(colors)
-                else:
-                    color_idx = i
-                
-                if len(sk) == 2:
-                    idx1, idx2 = sk[0], sk[1]
-                    if idx1 < len(candidate) and idx2 < len(candidate):
-                        Y = candidate[[idx1, idx2], 0] * float(W)
-                        X = candidate[[idx1, idx2], 1] * float(H)
-                        
-                        # Check if both points are valid
-                        if Y[0] > eps and X[0] > eps and Y[1] > eps and X[1] > eps:
-                            mX = np.mean(X)
-                            mY = np.mean(Y)
-                            length = ((X[0] - X[1]) ** 2 + (Y[0] - Y[1]) ** 2) ** 0.5
-                            angle = math.degrees(math.atan2(X[0] - X[1], Y[0] - Y[1]))
-                            polygon = cv2.ellipse2Poly((int(mY), int(mX)), (int(length / 2), stickwidth), int(angle), 0, 360, 1)
-                            cv2.fillConvexPoly(canvas, polygon, colors[color_idx])
-            
-            # Apply transparency like v2
-            canvas = (canvas * 0.6).astype(np.uint8)
-            
-            # Draw keypoints
-            for i in range(num_kpts):
-                if i < len(colors):
-                    color = colors[i]
-                else:
-                    color = colors[i % len(colors)]
-                
-                if x[i] > eps and y[i] > eps:
-                    cv2.circle(canvas, (int(x[i]), int(y[i])), 4, color, thickness=-1)
-    
-    # Save the result
-    savename = os.path.join(output_dir, "pose.jpg")
-    print("savename: {}".format(savename))
-    os.makedirs(os.path.dirname(savename), exist_ok=True)
-    cv2.imwrite(savename, canvas)
-    
-    return canvas
 
 def smoothing_factor(t_e, cutoff):
     r = 2 * math.pi * cutoff * t_e
@@ -414,34 +227,32 @@ def mp_main(args):
     # results_vis = results_vis[8:]
     print(len(results_vis))
 
-
-    # ref_name = args.ref_name
+    ref_name = args.ref_name
     save_motion = args.saved_pose_dir
-    # save_motion_wface = args.saved_pose_dir + '/wface'
     os.system(f'rm -rf {save_motion}');
     os.makedirs(save_motion, exist_ok=True)
     save_warp = args.saved_pose_dir
     # os.makedirs(save_warp, exist_ok=True)
-    
-    # ref_frame = cv2.imread(ref_name, cv2.IMREAD_COLOR)
-    ref_pose_path = args.ref_pose_path
     video_char_image = args.video_char_image
-
+    ratio_factor = args.ratio_factor
+    
+    ref_frame = cv2.imread(ref_name, cv2.IMREAD_COLOR)
     base_char_image = cv2.imread(video_char_image, cv2.IMREAD_COLOR)
-    # pose_ref = dw_func(i, ref_frame, dwpose_model)
+    
+    
+    pose_ref = dw_func(i, ref_frame, dwpose_model)
+    # print("pose_ref is:", pose_ref)
 
-    # dwpose_woface, dwpose_wface = draw_pose(pose_ref, H=768, W=512)
+    dwpose_woface, dwpose_wface = draw_pose(pose_ref, H=768, W=512)
 
-    pose_ref = load_xpose_pose(ref_pose_path)
     base_char_pose = dwpose_model(base_char_image)
     char, char_wface = draw_pose(base_char_pose, H=768, W=512)
     img_path = save_motion+'/' + 'char.jpg'
     # cv2.imwrite(img_path, char)
-    
+
     bodies = base_char_pose['bodies']
-    # faces = base_char_pose[0]['faces']
-    # hands = base_char_pose[0]['hands']
     candidate = bodies['candidate']
+    
     
 
     # bodies = results_vis[0]['bodies']
@@ -449,10 +260,13 @@ def mp_main(args):
     # hands = results_vis[0]['hands']
     # candidate = bodies['candidate']
 
-    # ref_bodies = pose_ref['bodies']
-    # ref_faces = pose_ref['faces']
-    # ref_hands = pose_ref['hands']
-    ref_candidate = map_xpose_to_20kpts(pose_ref)
+    ref_bodies = pose_ref['bodies']
+    ref_faces = pose_ref['faces']
+    ref_hands = pose_ref['hands']
+    ref_candidate = ref_bodies['candidate']
+    # print("ref_candidate", ref_candidate)
+    # print("ref_candidate shape is:", ref_candidate.shape)
+    # assert 0 == 1
 
 
     ref_2_x = ref_candidate[2][0]
@@ -480,6 +294,10 @@ def mp_main(args):
     x_ratio = (ref_5_x-ref_2_x)/(zero_5_x-zero_2_x)
     y_ratio = (ref_center2[1]-ref_center1[1])/(zero_center2[1]-zero_center1[1])
 
+    if ratio_factor:
+        x_ratio = x_ratio * ratio_factor
+        y_ratio = y_ratio * ratio_factor
+
     results_vis[0]['bodies']['candidate'][:,0] *= x_ratio
     results_vis[0]['bodies']['candidate'][:,1] *= y_ratio
     results_vis[0]['faces'][:,:,0] *= x_ratio
@@ -491,6 +309,9 @@ def mp_main(args):
     l_neck_ref = ((ref_candidate[0][0] - ref_candidate[1][0]) ** 2 + (ref_candidate[0][1] - ref_candidate[1][1]) ** 2) ** 0.5
     l_neck_0 = ((candidate[0][0] - candidate[1][0]) ** 2 + (candidate[0][1] - candidate[1][1]) ** 2) ** 0.5
     neck_ratio = l_neck_ref / l_neck_0
+
+    if ratio_factor:
+        neck_ratio = neck_ratio * ratio_factor
 
     x_offset_neck = (candidate[1][0]-candidate[0][0])*(1.-neck_ratio)
     y_offset_neck = (candidate[1][1]-candidate[0][1])*(1.-neck_ratio)
@@ -511,6 +332,8 @@ def mp_main(args):
     l_shoulder2_0 = ((candidate[2][0] - candidate[1][0]) ** 2 + (candidate[2][1] - candidate[1][1]) ** 2) ** 0.5
 
     shoulder2_ratio = l_shoulder2_ref / l_shoulder2_0
+    if ratio_factor:
+        shoulder2_ratio = shoulder2_ratio * ratio_factor
 
     x_offset_shoulder2 = (candidate[1][0]-candidate[2][0])*(1.-shoulder2_ratio)
     y_offset_shoulder2 = (candidate[1][1]-candidate[2][1])*(1.-shoulder2_ratio)
@@ -529,6 +352,8 @@ def mp_main(args):
     l_shoulder5_0 = ((candidate[5][0] - candidate[1][0]) ** 2 + (candidate[5][1] - candidate[1][1]) ** 2) ** 0.5
 
     shoulder5_ratio = l_shoulder5_ref / l_shoulder5_0
+    if ratio_factor:
+        shoulder5_ratio = shoulder5_ratio * ratio_factor
 
     x_offset_shoulder5 = (candidate[1][0]-candidate[5][0])*(1.-shoulder5_ratio)
     y_offset_shoulder5 = (candidate[1][1]-candidate[5][1])*(1.-shoulder5_ratio)
@@ -545,8 +370,11 @@ def mp_main(args):
     ########arm3########
     l_arm3_ref = ((ref_candidate[3][0] - ref_candidate[2][0]) ** 2 + (ref_candidate[3][1] - ref_candidate[2][1]) ** 2) ** 0.5
     l_arm3_0 = ((candidate[3][0] - candidate[2][0]) ** 2 + (candidate[3][1] - candidate[2][1]) ** 2) ** 0.5
+    
 
     arm3_ratio = l_arm3_ref / l_arm3_0
+    if ratio_factor:
+        arm3_ratio = arm3_ratio * ratio_factor
 
     x_offset_arm3 = (candidate[2][0]-candidate[3][0])*(1.-arm3_ratio)
     y_offset_arm3 = (candidate[2][1]-candidate[3][1])*(1.-arm3_ratio)
@@ -563,6 +391,8 @@ def mp_main(args):
     l_arm4_0 = ((candidate[4][0] - candidate[3][0]) ** 2 + (candidate[4][1] - candidate[3][1]) ** 2) ** 0.5
 
     arm4_ratio = l_arm4_ref / l_arm4_0
+    if ratio_factor:
+        arm4_ratio = arm4_ratio * ratio_factor
 
     x_offset_arm4 = (candidate[3][0]-candidate[4][0])*(1.-arm4_ratio)
     y_offset_arm4 = (candidate[3][1]-candidate[4][1])*(1.-arm4_ratio)
@@ -577,6 +407,8 @@ def mp_main(args):
     l_arm6_0 = ((candidate[6][0] - candidate[5][0]) ** 2 + (candidate[6][1] - candidate[5][1]) ** 2) ** 0.5
 
     arm6_ratio = l_arm6_ref / l_arm6_0
+    if ratio_factor:
+        arm6_ratio = arm6_ratio * ratio_factor
 
     x_offset_arm6 = (candidate[5][0]-candidate[6][0])*(1.-arm6_ratio)
     y_offset_arm6 = (candidate[5][1]-candidate[6][1])*(1.-arm6_ratio)
@@ -593,6 +425,8 @@ def mp_main(args):
     l_arm7_0 = ((candidate[7][0] - candidate[6][0]) ** 2 + (candidate[7][1] - candidate[6][1]) ** 2) ** 0.5
 
     arm7_ratio = l_arm7_ref / l_arm7_0
+    if ratio_factor:
+        arm7_ratio = arm7_ratio * ratio_factor
 
     x_offset_arm7 = (candidate[6][0]-candidate[7][0])*(1.-arm7_ratio)
     y_offset_arm7 = (candidate[6][1]-candidate[7][1])*(1.-arm7_ratio)
@@ -607,6 +441,8 @@ def mp_main(args):
     l_head14_0 = ((candidate[14][0] - candidate[0][0]) ** 2 + (candidate[14][1] - candidate[0][1]) ** 2) ** 0.5
 
     head14_ratio = l_head14_ref / l_head14_0
+    if ratio_factor:
+        head14_ratio = head14_ratio * ratio_factor
 
     x_offset_head14 = (candidate[0][0]-candidate[14][0])*(1.-head14_ratio)
     y_offset_head14 = (candidate[0][1]-candidate[14][1])*(1.-head14_ratio)
@@ -621,7 +457,9 @@ def mp_main(args):
     l_head15_0 = ((candidate[15][0] - candidate[0][0]) ** 2 + (candidate[15][1] - candidate[0][1]) ** 2) ** 0.5
 
     head15_ratio = l_head15_ref / l_head15_0
-
+    if ratio_factor:
+        head15_ratio = head15_ratio * ratio_factor
+        
     x_offset_head15 = (candidate[0][0]-candidate[15][0])*(1.-head15_ratio)
     y_offset_head15 = (candidate[0][1]-candidate[15][1])*(1.-head15_ratio)
 
@@ -635,6 +473,8 @@ def mp_main(args):
     l_head16_0 = ((candidate[16][0] - candidate[14][0]) ** 2 + (candidate[16][1] - candidate[14][1]) ** 2) ** 0.5
 
     head16_ratio = l_head16_ref / l_head16_0
+    if ratio_factor:
+        head16_ratio = head16_ratio * ratio_factor
 
     x_offset_head16 = (candidate[14][0]-candidate[16][0])*(1.-head16_ratio)
     y_offset_head16 = (candidate[14][1]-candidate[16][1])*(1.-head16_ratio)
@@ -647,6 +487,8 @@ def mp_main(args):
     l_head17_0 = ((candidate[17][0] - candidate[15][0]) ** 2 + (candidate[17][1] - candidate[15][1]) ** 2) ** 0.5
 
     head17_ratio = l_head17_ref / l_head17_0
+    if ratio_factor:
+        head17_ratio = head17_ratio * ratio_factor
 
     x_offset_head17 = (candidate[15][0]-candidate[17][0])*(1.-head17_ratio)
     y_offset_head17 = (candidate[15][1]-candidate[17][1])*(1.-head17_ratio)
@@ -660,6 +502,8 @@ def mp_main(args):
     l_ll1_ref = ((ref_candidate[8][0] - ref_candidate[9][0]) ** 2 + (ref_candidate[8][1] - ref_candidate[9][1]) ** 2) ** 0.5
     l_ll1_0 = ((candidate[8][0] - candidate[9][0]) ** 2 + (candidate[8][1] - candidate[9][1]) ** 2) ** 0.5
     ll1_ratio = l_ll1_ref / l_ll1_0
+    if ratio_factor:
+        ll1_ratio = ll1_ratio * ratio_factor
 
     x_offset_ll1 = (candidate[9][0]-candidate[8][0])*(ll1_ratio-1.)
     y_offset_ll1 = (candidate[9][1]-candidate[8][1])*(ll1_ratio-1.)
@@ -674,6 +518,8 @@ def mp_main(args):
     l_ll2_ref = ((ref_candidate[9][0] - ref_candidate[10][0]) ** 2 + (ref_candidate[9][1] - ref_candidate[10][1]) ** 2) ** 0.5
     l_ll2_0 = ((candidate[9][0] - candidate[10][0]) ** 2 + (candidate[9][1] - candidate[10][1]) ** 2) ** 0.5
     ll2_ratio = l_ll2_ref / l_ll2_0
+    if ratio_factor:
+        ll2_ratio = ll2_ratio * ratio_factor
 
     x_offset_ll2 = (candidate[10][0]-candidate[9][0])*(ll2_ratio-1.)
     y_offset_ll2 = (candidate[10][1]-candidate[9][1])*(ll2_ratio-1.)
@@ -687,6 +533,8 @@ def mp_main(args):
     l_rl1_ref = ((ref_candidate[11][0] - ref_candidate[12][0]) ** 2 + (ref_candidate[11][1] - ref_candidate[12][1]) ** 2) ** 0.5
     l_rl1_0 = ((candidate[11][0] - candidate[12][0]) ** 2 + (candidate[11][1] - candidate[12][1]) ** 2) ** 0.5
     rl1_ratio = l_rl1_ref / l_rl1_0
+    if ratio_factor:
+        rl1_ratio = rl1_ratio * ratio_factor
 
     x_offset_rl1 = (candidate[12][0]-candidate[11][0])*(rl1_ratio-1.)
     y_offset_rl1 = (candidate[12][1]-candidate[11][1])*(rl1_ratio-1.)
@@ -701,7 +549,9 @@ def mp_main(args):
     l_rl2_ref = ((ref_candidate[12][0] - ref_candidate[13][0]) ** 2 + (ref_candidate[12][1] - ref_candidate[13][1]) ** 2) ** 0.5
     l_rl2_0 = ((candidate[12][0] - candidate[13][0]) ** 2 + (candidate[12][1] - candidate[13][1]) ** 2) ** 0.5
     rl2_ratio = l_rl2_ref / l_rl2_0
-
+    if ratio_factor:
+        rl2_ratio = rl2_ratio * ratio_factor
+        
     x_offset_rl2 = (candidate[13][0]-candidate[12][0])*(rl2_ratio-1.)
     y_offset_rl2 = (candidate[13][1]-candidate[12][1])*(rl2_ratio-1.)
 
@@ -898,13 +748,10 @@ def mp_main(args):
     for i in range(len(results_vis)):
         dwpose_woface, dwpose_wface = draw_pose(results_vis[i], H=768, W=512)
         img_path = save_motion+'/' + str(i).zfill(4) + '.jpg'
-        # img_path_wface = save_motion + '/' + str(i).zfill(4) + '_wface.jpg'
         cv2.imwrite(img_path, dwpose_woface)
-        # cv2.imwrite(img_path_wface, dwpose_wface)
     
-    # canvas = draw_pose_skeleton_v2_style(pose_ref, pose_ref['keypoint_text_prompt'], pose_ref['keypoint_skeleton'], save_warp)
-    # dwpose_woface, dwpose_wface = draw_pose(pose_ref, H=768, W=512)
-    # img_path = save_warp+'/' + 'pose.jpg'
+    dwpose_woface, dwpose_wface = draw_pose(pose_ref, H=768, W=512)
+    img_path = save_warp+'/' + 'pose.jpg'
     # cv2.imwrite(img_path, dwpose_woface)
 
 
@@ -914,10 +761,11 @@ logger = get_logger('dw pose extraction')
 if __name__=='__main__':
     def parse_args(): 
         parser = argparse.ArgumentParser(description="Simple example of a training script.")
-        parser.add_argument("--ref_pose_path", required=True, type=str, default="",)
-        parser.add_argument("--video_char_image", required=True, type=str, default="",)
+        parser.add_argument("--ref_name", type=str, required=True, default="data/images/IMG_20240514_104337.jpg",)
+        parser.add_argument("--video_char_image", type=str, required=True, default="",)
         parser.add_argument("--source_video_paths", type=str, default="data/videos/source_video.mp4",)
         parser.add_argument("--saved_pose_dir", type=str, default="data/saved_pose/IMG_20240514_104337",)
+        parser.add_argument("--ratio_factor", type=float, default=1.0,)
         args = parser.parse_args()
 
         return args

@@ -426,8 +426,8 @@ def mp_main(args):
     # ref_frame = cv2.imread(ref_name, cv2.IMREAD_COLOR)
     ref_pose_path = args.ref_pose_path
     video_char_image = args.video_char_image
-
     base_char_image = cv2.imread(video_char_image, cv2.IMREAD_COLOR)
+    ratio_factor = args.ratio_factor
     # pose_ref = dw_func(i, ref_frame, dwpose_model)
 
     # dwpose_woface, dwpose_wface = draw_pose(pose_ref, H=768, W=512)
@@ -480,6 +480,10 @@ def mp_main(args):
     x_ratio = (ref_5_x-ref_2_x)/(zero_5_x-zero_2_x)
     y_ratio = (ref_center2[1]-ref_center1[1])/(zero_center2[1]-zero_center1[1])
 
+    if ratio_factor:
+        x_ratio = x_ratio * ratio_factor
+        y_ratio = y_ratio * ratio_factor
+
     results_vis[0]['bodies']['candidate'][:,0] *= x_ratio
     results_vis[0]['bodies']['candidate'][:,1] *= y_ratio
     results_vis[0]['faces'][:,:,0] *= x_ratio
@@ -491,6 +495,8 @@ def mp_main(args):
     l_neck_ref = ((ref_candidate[0][0] - ref_candidate[1][0]) ** 2 + (ref_candidate[0][1] - ref_candidate[1][1]) ** 2) ** 0.5
     l_neck_0 = ((candidate[0][0] - candidate[1][0]) ** 2 + (candidate[0][1] - candidate[1][1]) ** 2) ** 0.5
     neck_ratio = l_neck_ref / l_neck_0
+    if ratio_factor:
+        neck_ratio = neck_ratio * ratio_factor
 
     x_offset_neck = (candidate[1][0]-candidate[0][0])*(1.-neck_ratio)
     y_offset_neck = (candidate[1][1]-candidate[0][1])*(1.-neck_ratio)
@@ -511,7 +517,9 @@ def mp_main(args):
     l_shoulder2_0 = ((candidate[2][0] - candidate[1][0]) ** 2 + (candidate[2][1] - candidate[1][1]) ** 2) ** 0.5
 
     shoulder2_ratio = l_shoulder2_ref / l_shoulder2_0
-
+    if ratio_factor:
+        shoulder2_ratio = shoulder2_ratio * ratio_factor
+        
     x_offset_shoulder2 = (candidate[1][0]-candidate[2][0])*(1.-shoulder2_ratio)
     y_offset_shoulder2 = (candidate[1][1]-candidate[2][1])*(1.-shoulder2_ratio)
 
@@ -529,7 +537,9 @@ def mp_main(args):
     l_shoulder5_0 = ((candidate[5][0] - candidate[1][0]) ** 2 + (candidate[5][1] - candidate[1][1]) ** 2) ** 0.5
 
     shoulder5_ratio = l_shoulder5_ref / l_shoulder5_0
-
+    if ratio_factor:
+        shoulder5_ratio = shoulder5_ratio * ratio_factor
+        
     x_offset_shoulder5 = (candidate[1][0]-candidate[5][0])*(1.-shoulder5_ratio)
     y_offset_shoulder5 = (candidate[1][1]-candidate[5][1])*(1.-shoulder5_ratio)
 
@@ -547,7 +557,9 @@ def mp_main(args):
     l_arm3_0 = ((candidate[3][0] - candidate[2][0]) ** 2 + (candidate[3][1] - candidate[2][1]) ** 2) ** 0.5
 
     arm3_ratio = l_arm3_ref / l_arm3_0
-
+    if ratio_factor:
+        arm3_ratio = arm3_ratio * ratio_factor
+        
     x_offset_arm3 = (candidate[2][0]-candidate[3][0])*(1.-arm3_ratio)
     y_offset_arm3 = (candidate[2][1]-candidate[3][1])*(1.-arm3_ratio)
 
@@ -563,7 +575,9 @@ def mp_main(args):
     l_arm4_0 = ((candidate[4][0] - candidate[3][0]) ** 2 + (candidate[4][1] - candidate[3][1]) ** 2) ** 0.5
 
     arm4_ratio = l_arm4_ref / l_arm4_0
-
+    if ratio_factor:
+        arm4_ratio = arm4_ratio * ratio_factor
+        
     x_offset_arm4 = (candidate[3][0]-candidate[4][0])*(1.-arm4_ratio)
     y_offset_arm4 = (candidate[3][1]-candidate[4][1])*(1.-arm4_ratio)
 
@@ -577,7 +591,9 @@ def mp_main(args):
     l_arm6_0 = ((candidate[6][0] - candidate[5][0]) ** 2 + (candidate[6][1] - candidate[5][1]) ** 2) ** 0.5
 
     arm6_ratio = l_arm6_ref / l_arm6_0
-
+    if ratio_factor:
+        arm6_ratio = arm6_ratio * ratio_factor
+        
     x_offset_arm6 = (candidate[5][0]-candidate[6][0])*(1.-arm6_ratio)
     y_offset_arm6 = (candidate[5][1]-candidate[6][1])*(1.-arm6_ratio)
 
@@ -593,7 +609,9 @@ def mp_main(args):
     l_arm7_0 = ((candidate[7][0] - candidate[6][0]) ** 2 + (candidate[7][1] - candidate[6][1]) ** 2) ** 0.5
 
     arm7_ratio = l_arm7_ref / l_arm7_0
-
+    if ratio_factor:
+        arm7_ratio = arm7_ratio * ratio_factor
+        
     x_offset_arm7 = (candidate[6][0]-candidate[7][0])*(1.-arm7_ratio)
     y_offset_arm7 = (candidate[6][1]-candidate[7][1])*(1.-arm7_ratio)
 
@@ -607,7 +625,9 @@ def mp_main(args):
     l_head14_0 = ((candidate[14][0] - candidate[0][0]) ** 2 + (candidate[14][1] - candidate[0][1]) ** 2) ** 0.5
 
     head14_ratio = l_head14_ref / l_head14_0
-
+    if ratio_factor:
+        head14_ratio = head14_ratio * ratio_factor
+        
     x_offset_head14 = (candidate[0][0]-candidate[14][0])*(1.-head14_ratio)
     y_offset_head14 = (candidate[0][1]-candidate[14][1])*(1.-head14_ratio)
 
@@ -621,7 +641,9 @@ def mp_main(args):
     l_head15_0 = ((candidate[15][0] - candidate[0][0]) ** 2 + (candidate[15][1] - candidate[0][1]) ** 2) ** 0.5
 
     head15_ratio = l_head15_ref / l_head15_0
-
+    if ratio_factor:
+        head15_ratio = head15_ratio * ratio_factor
+        
     x_offset_head15 = (candidate[0][0]-candidate[15][0])*(1.-head15_ratio)
     y_offset_head15 = (candidate[0][1]-candidate[15][1])*(1.-head15_ratio)
 
@@ -633,7 +655,9 @@ def mp_main(args):
     ########head16########
     l_head16_ref = ((ref_candidate[16][0] - ref_candidate[14][0]) ** 2 + (ref_candidate[16][1] - ref_candidate[14][1]) ** 2) ** 0.5
     l_head16_0 = ((candidate[16][0] - candidate[14][0]) ** 2 + (candidate[16][1] - candidate[14][1]) ** 2) ** 0.5
-
+    if ratio_factor:
+        head16_ratio = head16_ratio * ratio_factor
+        
     head16_ratio = l_head16_ref / l_head16_0
 
     x_offset_head16 = (candidate[14][0]-candidate[16][0])*(1.-head16_ratio)
@@ -645,7 +669,9 @@ def mp_main(args):
     ########head17########
     l_head17_ref = ((ref_candidate[17][0] - ref_candidate[15][0]) ** 2 + (ref_candidate[17][1] - ref_candidate[15][1]) ** 2) ** 0.5
     l_head17_0 = ((candidate[17][0] - candidate[15][0]) ** 2 + (candidate[17][1] - candidate[15][1]) ** 2) ** 0.5
-
+    if ratio_factor:
+        head17_ratio = head17_ratio * ratio_factor
+        
     head17_ratio = l_head17_ref / l_head17_0
 
     x_offset_head17 = (candidate[15][0]-candidate[17][0])*(1.-head17_ratio)
@@ -660,7 +686,9 @@ def mp_main(args):
     l_ll1_ref = ((ref_candidate[8][0] - ref_candidate[9][0]) ** 2 + (ref_candidate[8][1] - ref_candidate[9][1]) ** 2) ** 0.5
     l_ll1_0 = ((candidate[8][0] - candidate[9][0]) ** 2 + (candidate[8][1] - candidate[9][1]) ** 2) ** 0.5
     ll1_ratio = l_ll1_ref / l_ll1_0
-
+    if ratio_factor:
+        ll1_ratio = ll1_ratio * ratio_factor
+        
     x_offset_ll1 = (candidate[9][0]-candidate[8][0])*(ll1_ratio-1.)
     y_offset_ll1 = (candidate[9][1]-candidate[8][1])*(ll1_ratio-1.)
 
@@ -674,6 +702,8 @@ def mp_main(args):
     l_ll2_ref = ((ref_candidate[9][0] - ref_candidate[10][0]) ** 2 + (ref_candidate[9][1] - ref_candidate[10][1]) ** 2) ** 0.5
     l_ll2_0 = ((candidate[9][0] - candidate[10][0]) ** 2 + (candidate[9][1] - candidate[10][1]) ** 2) ** 0.5
     ll2_ratio = l_ll2_ref / l_ll2_0
+    if ratio_factor:
+        ll2_ratio = ll2_ratio * ratio_factor
 
     x_offset_ll2 = (candidate[10][0]-candidate[9][0])*(ll2_ratio-1.)
     y_offset_ll2 = (candidate[10][1]-candidate[9][1])*(ll2_ratio-1.)
@@ -687,7 +717,9 @@ def mp_main(args):
     l_rl1_ref = ((ref_candidate[11][0] - ref_candidate[12][0]) ** 2 + (ref_candidate[11][1] - ref_candidate[12][1]) ** 2) ** 0.5
     l_rl1_0 = ((candidate[11][0] - candidate[12][0]) ** 2 + (candidate[11][1] - candidate[12][1]) ** 2) ** 0.5
     rl1_ratio = l_rl1_ref / l_rl1_0
-
+    if ratio_factor:
+        rl1_ratio = rl1_ratio * ratio_factor
+        
     x_offset_rl1 = (candidate[12][0]-candidate[11][0])*(rl1_ratio-1.)
     y_offset_rl1 = (candidate[12][1]-candidate[11][1])*(rl1_ratio-1.)
 
@@ -701,7 +733,9 @@ def mp_main(args):
     l_rl2_ref = ((ref_candidate[12][0] - ref_candidate[13][0]) ** 2 + (ref_candidate[12][1] - ref_candidate[13][1]) ** 2) ** 0.5
     l_rl2_0 = ((candidate[12][0] - candidate[13][0]) ** 2 + (candidate[12][1] - candidate[13][1]) ** 2) ** 0.5
     rl2_ratio = l_rl2_ref / l_rl2_0
-
+    if ratio_factor:
+        rl2_ratio = rl2_ratio * ratio_factor
+        
     x_offset_rl2 = (candidate[13][0]-candidate[12][0])*(rl2_ratio-1.)
     y_offset_rl2 = (candidate[13][1]-candidate[12][1])*(rl2_ratio-1.)
 
@@ -918,6 +952,7 @@ if __name__=='__main__':
         parser.add_argument("--video_char_image", required=True, type=str, default="",)
         parser.add_argument("--source_video_paths", type=str, default="data/videos/source_video.mp4",)
         parser.add_argument("--saved_pose_dir", type=str, default="data/saved_pose/IMG_20240514_104337",)
+        parser.add_argument("--ratio_factor", type=float, default=1.0,)
         args = parser.parse_args()
 
         return args

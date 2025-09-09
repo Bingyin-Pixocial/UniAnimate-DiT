@@ -17,10 +17,49 @@
 # --saved_pose_dir /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/saved_pose/Patrick_Star/aligned_poses_fixed \
 
 
-python xpose_alignment.py \
---ref_pose_path /home/ubuntu/bingyin-Vol/code/tools/X-Pose/outputs/cartoon3/pred_dict.npy \
---video_char_image /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/pix/test3_base_img.png \
---source_video_paths /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/pix/test3.mp4 \
---saved_pose_dir /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/saved_pose/xpose_test3_cartoon3  \
+# python xpose_alignment.py \
+# --ref_pose_path /home/ubuntu/bingyin-Vol/code/tools/X-Pose/outputs/cartoon3/pred_dict.npy \
+# --video_char_image /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/pix/test3_base_img.png \
+# --source_video_paths /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/pix/test3.mp4 \
+# --saved_pose_dir /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/saved_pose/xpose_test3_cartoon3  \
+
+
+# python xpose_alignment.py \
+# --ref_pose_path /home/ubuntu/bingyin-Vol/code/tools/X-Pose/outputs/dance_p3/BadPoseCase/1/pred_dict.npy \
+# --video_char_image /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/pix/test1_base_img.png \
+# --source_video_paths /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/pix/test1.mp4 \
+# --saved_pose_dir /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/saved_pose/xpose_test1_BadPoseCase1  \
+
+
+# python xpose_alignment.py \
+# --ref_pose_path /home/ubuntu/bingyin-Vol/code/tools/X-Pose/outputs/dance_p3/BadPoseCase/1/pred_dict.npy \
+# --video_char_image /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/pix/test3_base_img.png \
+# --source_video_paths /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/pix/test3.mp4 \
+# --saved_pose_dir /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/saved_pose/xpose_test3_BadPoseCase1  \
+
+
+
+# python xpose_alignment.py \
+# --ref_pose_path /home/ubuntu/bingyin-Vol/code/tools/X-Pose/outputs/dance_p3/BadPoseCase/1_corrected/pred_dict.npy \
+# --video_char_image /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/pix/test3_base_img.png \
+# --source_video_paths /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/pix/test3.mp4 \
+# --saved_pose_dir /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/saved_pose/xpose_test3_BadPoseCase1_corrected  \
+
+
+# python xpose_alignment.py \
+# --ref_pose_path /home/ubuntu/bingyin-Vol/code/tools/X-Pose/outputs/dance_p3/BadPoseCase/2_corrected/pred_dict.npy \
+# --video_char_image /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/pix/test3_base_img.png \
+# --source_video_paths /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/pix/test3.mp4 \
+# --saved_pose_dir /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/saved_pose/xpose_test3_BadPoseCase2_corrected  \
+
+
+python xpose_alignment_scaled.py \
+--ref_pose_path /home/ubuntu/bingyin-Vol/code/tools/X-Pose/outputs/dance_p3/BadPoseCase/4_corrected/pred_dict.npy \
+--video_char_image /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/pix/test1_base_img.png \
+--source_video_paths /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/pix/test1.mp4 \
+--saved_pose_dir /home/ubuntu/bingyin-Vol/code/i2v/motion_control/UniAnimate-DiT/data/saved_pose/xpose_test1_BadPoseCase4_corrected_ratio  \
+--ratio_factor 0.8
+
+
 
 

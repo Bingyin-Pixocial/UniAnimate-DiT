@@ -246,7 +246,7 @@ def mp_main(args):
     base_char_pose = dwpose_model(base_char_image)
     char, char_wface = draw_pose(base_char_pose, H=768, W=512)
     img_path = save_motion+'/' + 'char.jpg'
-    cv2.imwrite(img_path, char)
+    # cv2.imwrite(img_path, char)
 
     bodies = base_char_pose['bodies']
     candidate = bodies['candidate']
