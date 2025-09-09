@@ -136,8 +136,8 @@ def map_xpose_to_20kpts(pose_17x2: np.ndarray) -> np.ndarray:
     foot_length_factor = 0.5
     # pose_20x2[18] = left_ankle + left_leg_vec * foot_length_factor  # Left Foot
     # pose_20x2[19] = right_ankle + right_leg_vec * foot_length_factor  # Right Foot
-    pose_20x2[18] = right_ankle + right_leg_vec * foot_length_factor  # Left Foot
-    pose_20x2[19] = left_ankle + left_leg_vec * foot_length_factor  # Right Foot
+    pose_20x2[19] = right_ankle + right_leg_vec * foot_length_factor  # Left Foot
+    pose_20x2[18] = left_ankle + left_leg_vec * foot_length_factor  # Right Foot
 
     return pose_20x2
 
