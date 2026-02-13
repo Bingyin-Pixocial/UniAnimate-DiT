@@ -176,6 +176,30 @@ bash run_dwpose_alignment.sh
 bash run_xpose_alignment.sh
 ```
 
+**C. Enhanced pose alignment with angle-based retargeting (recommended):**
+
+`dwpose_alignment_improved.py` is an improved version of `dwpose_alignment.py` with the following enhancements:
+
+| # | Improvement | Description |
+|---|------------|-------------|
+| 1 | Angle-based retargeting | Preserves driving motion's joint angles while applying reference bone lengths (replaces translation-based approach) |
+| 2 | Temporal smoothing | One Euro Filter on all keypoints to reduce jitter while preserving fast motions |
+| 3 | Occlusion handling | Missing keypoints are filled via linear temporal interpolation |
+| 4 | Relative hand/face alignment | Hands re-anchored at retargeted wrists, face re-anchored at retargeted nose, both scaled proportionally |
+| 5 | Ground-plane constraints | Feet pinned to a median ground plane during detected contact frames |
+| 6 | Depth-adaptive scaling | Per-frame scale normalisation based on shoulder width to handle camera depth changes |
+| 7 | Two-anchor alignment | Hip-center-driven root position for natural lateral sway and vertical bounce |
+| 8 | Physical plausibility | Joint angle limits (elbows/knees) and canvas boundary clamping |
+
+```bash
+bash run_dwpose_alignment_improved.sh
+```
+
+New optional arguments (vs original):
+- `--fps` &mdash; video FPS for temporal smoothing (default: 30)
+- `--smooth_min_cutoff` &mdash; One-Euro min cutoff; higher = less smoothing (default: 1.7)
+- `--smooth_beta` &mdash; One-Euro beta; higher = less lag on fast motion (default: 0.3)
+
 
 
 ### (4) Pose alignment 
