@@ -190,6 +190,10 @@ bash run_xpose_alignment.sh
 | 6 | Depth-adaptive scaling | Per-frame scale normalisation based on shoulder width to handle camera depth changes |
 | 7 | Two-anchor alignment | Hip-center-driven root position for natural lateral sway and vertical bounce |
 | 8 | Physical plausibility | Joint angle limits (elbows/knees) and canvas boundary clamping |
+| 9 | Partial-body support | When the reference image shows only part of the body (e.g., face/upper body), uses an edited full-body reference for retargeting, then maps poses back to the visible region via coordinate transform + visibility masking |
+| 10 | Position correction | Automatic anchor-based global offset so the retargeted skeleton matches the reference character's position regardless of where the driving video character is |
+| 11 | Motion attenuation | In partial-body mode, global sway/drift is scaled down inversely to the coordinate-transform zoom so close-up skeletons stay on canvas |
+| 12 | Auto max_bone_ratio | Automatic bone-length ratio limit computed from skeleton scale difference; set `--max_bone_ratio 0` (default) |
 
 ```bash
 bash run_dwpose_alignment_improved.sh
@@ -199,8 +203,24 @@ New optional arguments (vs original):
 - `--fps` &mdash; video FPS for temporal smoothing (default: 30)
 - `--smooth_min_cutoff` &mdash; One-Euro min cutoff; higher = less smoothing (default: 1.7)
 - `--smooth_beta` &mdash; One-Euro beta; higher = less lag on fast motion (default: 0.3)
-- `--max_bone_ratio` &mdash; maximum allowed bone-length ratio between reference and driving characters; prevents unrealistic limb stretching when body proportions differ significantly (default: 1.5)
+- `--max_bone_ratio` &mdash; maximum allowed bone-length ratio between reference and driving characters; set to **0** for automatic detection based on skeleton scale difference (recommended); a positive value is used as-is (default: 0 = auto)
 - `--video_only` &mdash; only keep the output video; individual frame images are deleted after encoding (available in all three pose alignment scripts)
+- `--edited_ref_name` &mdash; path to a full-body edited version of the reference image; enables **partial-body mode** where only the visible region of the original reference is rendered
+- `--sam_checkpoint` &mdash; path to a SAM checkpoint (e.g., `sam_vit_b_01ec64.pth`) for precise person-mask visibility detection; requires `pip install segment-anything`; falls back to keypoint-based visibility if not provided
+- `--visibility_margin` &mdash; margin (normalised) added around the detected visible region in partial-body mode (default: 0.05)
+
+**Partial-body mode** is useful when the reference image shows only part of the character (e.g., a close-up face shot) while the driving video shows the full body. Provide an edited full-body version of the reference image via `--edited_ref_name`:
+
+```bash
+python dwpose_alignment_improved.py \
+  --ref_name face_ref.jpg \
+  --edited_ref_name face_ref_fullbody.jpg \
+  --video_char_image video_char.png \
+  --source_video_paths dance.mp4 \
+  --saved_pose_dir output/ \
+  --sam_checkpoint checkpoints/sam_vit_b_01ec64.pth \
+  --visibility_margin 0.05
+```
 
 
 

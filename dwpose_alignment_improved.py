@@ -28,6 +28,15 @@ import sys
 
 import dwpose.util as util
 from dwpose.wholebody import Wholebody
+from dwpose.onnxdet import inference_detector
+
+# Optional SAM dependency for precise visibility masking
+_SAM_AVAILABLE = False
+try:
+    from segment_anything import sam_model_registry, SamPredictor
+    _SAM_AVAILABLE = True
+except ImportError:
+    pass
 
 
 # =============================================================================
@@ -184,6 +193,435 @@ def rotate_2d(v, angle_rad):
 
 
 # =============================================================================
+# SAM-based person mask extraction (optional)
+# =============================================================================
+def load_sam_predictor(checkpoint_path, device="cuda"):
+    """Load a SAM model and return a SamPredictor.
+
+    The model type (vit_b, vit_l, vit_h) is auto-detected from the
+    checkpoint filename.
+    """
+    if not _SAM_AVAILABLE:
+        raise RuntimeError(
+            "segment-anything is not installed. "
+            "Install with: pip install segment-anything")
+
+    fname = os.path.basename(checkpoint_path).lower()
+    if "vit_h" in fname:
+        model_type = "vit_h"
+    elif "vit_l" in fname:
+        model_type = "vit_l"
+    else:
+        model_type = "vit_b"
+
+    sam = sam_model_registry[model_type](checkpoint=checkpoint_path)
+    sam.to(device)
+    return SamPredictor(sam)
+
+
+def get_person_mask_sam(image_bgr, sam_predictor, person_bbox):
+    """Run SAM with a YOLOX-detected person box prompt.
+
+    Parameters
+    ----------
+    image_bgr    : (H, W, 3) BGR image (as read by cv2).
+    sam_predictor : SamPredictor instance.
+    person_bbox   : (x1, y1, x2, y2) pixel coordinates.
+
+    Returns
+    -------
+    mask : (H, W) bool array.
+    """
+    image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+    sam_predictor.set_image(image_rgb)
+    box_np = np.array(person_bbox).reshape(1, 4)
+    masks, _, _ = sam_predictor.predict(
+        box=box_np,
+        multimask_output=False,
+    )
+    return masks[0]  # (H, W) bool
+
+
+# =============================================================================
+# Partial-body: visibility region computation
+# =============================================================================
+def compute_visibility_region_sam(image_bgr, sam_predictor, yolox_session,
+                                  margin=0.05):
+    """Compute the visible person region using SAM.
+
+    Returns (y_min, y_max, x_min, x_max) in normalised [0, 1] coords.
+    """
+    H, W = image_bgr.shape[:2]
+
+    bboxes = inference_detector(yolox_session, image_bgr)
+    if len(bboxes) == 0:
+        return (0.0, 1.0, 0.0, 1.0)
+
+    person_box = bboxes[0]  # most confident person
+    mask = get_person_mask_sam(image_bgr, sam_predictor, person_box)
+
+    ys, xs = np.where(mask)
+    if len(ys) == 0:
+        return (0.0, 1.0, 0.0, 1.0)
+
+    y_min = max(0.0, float(ys.min()) / H - margin)
+    y_max = min(1.0, float(ys.max()) / H + margin)
+    x_min = max(0.0, float(xs.min()) / W - margin)
+    x_max = min(1.0, float(xs.max()) / W + margin)
+    return (y_min, y_max, x_min, x_max)
+
+
+def compute_visibility_region_keypoints(ref_cand, margin=0.05):
+    """Fallback: determine the visible region from detected keypoints.
+
+    Returns (y_min, y_max, x_min, x_max) in normalised [0, 1] coords.
+    """
+    valid_xs, valid_ys = [], []
+    for j in range(ref_cand.shape[0]):
+        if is_valid_kp(ref_cand[j]):
+            valid_xs.append(ref_cand[j][0])
+            valid_ys.append(ref_cand[j][1])
+
+    if len(valid_xs) == 0:
+        return (0.0, 1.0, 0.0, 1.0)
+
+    y_min = max(0.0, min(valid_ys) - margin)
+    y_max = min(1.0, max(valid_ys) + margin)
+    x_min = max(0.0, min(valid_xs) - margin)
+    x_max = min(1.0, max(valid_xs) + margin)
+    return (y_min, y_max, x_min, x_max)
+
+
+# =============================================================================
+# Partial-body: coordinate transform (edited ref -> original ref)
+# =============================================================================
+def compute_coord_transform(orig_ref_cand, edit_ref_cand):
+    """Fit an affine mapping: orig = scale * edited + offset.
+
+    Uses common valid keypoints in both skeletons.  Separate scale and
+    offset for x and y.  Falls back to identity if fewer than 2 common
+    keypoints are found.
+
+    Returns (sx, sy, tx, ty).
+    """
+    common_x_orig, common_y_orig = [], []
+    common_x_edit, common_y_edit = [], []
+
+    for j in range(min(orig_ref_cand.shape[0], edit_ref_cand.shape[0])):
+        if is_valid_kp(orig_ref_cand[j]) and is_valid_kp(edit_ref_cand[j]):
+            common_x_orig.append(orig_ref_cand[j][0])
+            common_y_orig.append(orig_ref_cand[j][1])
+            common_x_edit.append(edit_ref_cand[j][0])
+            common_y_edit.append(edit_ref_cand[j][1])
+
+    if len(common_x_orig) < 2:
+        return (1.0, 1.0, 0.0, 0.0)
+
+    common_x_orig = np.array(common_x_orig)
+    common_y_orig = np.array(common_y_orig)
+    common_x_edit = np.array(common_x_edit)
+    common_y_edit = np.array(common_y_edit)
+
+    sx, tx = np.polyfit(common_x_edit, common_x_orig, 1)
+    sy, ty = np.polyfit(common_y_edit, common_y_orig, 1)
+    return (float(sx), float(sy), float(tx), float(ty))
+
+
+# =============================================================================
+# Partial-body: apply coordinate transform and visibility mask
+# =============================================================================
+def _transform_kp(kp, sx, sy, tx, ty):
+    """Transform a single (x, y) keypoint."""
+    return np.array([sx * kp[0] + tx, sy * kp[1] + ty])
+
+
+def apply_coord_transform_pose(pose, sx, sy, tx, ty):
+    """Transform all keypoints in a pose dict from edited-ref space to
+    original-ref space."""
+    cand = pose['bodies']['candidate']
+    for j in range(cand.shape[0]):
+        if is_valid_kp(cand[j]):
+            cand[j] = _transform_kp(cand[j], sx, sy, tx, ty)
+
+    hands = pose['hands']
+    for hi in range(hands.shape[0]):
+        for k in range(hands.shape[1]):
+            if is_valid_kp(hands[hi, k]):
+                hands[hi, k] = _transform_kp(hands[hi, k], sx, sy, tx, ty)
+
+    faces = pose['faces']
+    for fi in range(faces.shape[0]):
+        for k in range(faces.shape[1]):
+            if is_valid_kp(faces[fi, k]):
+                faces[fi, k] = _transform_kp(faces[fi, k], sx, sy, tx, ty)
+
+    return pose
+
+
+def compute_visible_joint_set(orig_ref_cand, propagate=True):
+    """Determine which joint types should be visible based on the original
+    reference pose.
+
+    Parameters
+    ----------
+    orig_ref_cand : (20, 2) array of keypoints from the original reference.
+    propagate     : bool.  When True (SAM path), propagate through kinematic
+                    chains so downstream children of detected joints are also
+                    visible.  When False (no-SAM fallback), only directly
+                    detected joints are visible — no kinematic expansion.
+
+    Returns a set of visible joint indices.
+    """
+    visible = set()
+    for j in range(orig_ref_cand.shape[0]):
+        if is_valid_kp(orig_ref_cand[j]):
+            visible.add(j)
+
+    if propagate:
+        changed = True
+        while changed:
+            changed = False
+            for parent, child in KINEMATIC_CHAINS:
+                if parent in visible and child not in visible:
+                    visible.add(child)
+                    changed = True
+
+    return visible
+
+
+def _mask_joint(cand, subset, j):
+    """Set joint j to invalid (-1) in both candidate and subset."""
+    cand[j] = np.array([-1.0, -1.0])
+    for s in range(subset.shape[0]):
+        if int(subset[s][j]) == j:
+            subset[s][j] = -1
+
+
+def apply_visibility_mask(pose, visible_region, visible_joints=None):
+    """Mask out keypoints that should not be rendered.
+
+    Strategies applied to **body joints** (in order):
+    1. **Extreme-outlier guard**: joints farther than 1 canvas-width
+       off-screen (outside [−1, 2]) are masked to avoid numerical issues.
+       Joints that are merely slightly off-canvas are *kept* so that
+       OpenCV can draw the connecting limb up to the canvas edge.
+    2. **Joint-type visibility** (``visible_joints``): if provided, any
+       joint type NOT in the set is masked.
+    3. **Y-axis spatial clipping** (``visible_region``): joints whose
+       y-coordinate falls outside [y_min, y_max] are masked.
+
+    **Hand / face keypoints** use strict [0, 1] canvas-bounds clipping
+    to avoid partial hand/face artifacts at the edges.
+
+    Parameters
+    ----------
+    pose           : dict with 'bodies', 'hands', 'faces'.
+    visible_region : (y_min, y_max, x_min, x_max) in normalised coords.
+                     Only y_min and y_max are used for spatial clipping.
+    visible_joints : set of int, optional.  Joint indices that are allowed.
+    """
+    y_min, y_max = visible_region[0], visible_region[1]
+    cand = pose['bodies']['candidate']
+    subset = pose['bodies']['subset']
+
+    # Generous body-joint bounds: allow joints to extend up to 1 canvas-
+    # width off-screen so limb connections are preserved and OpenCV clips
+    # the drawn lines naturally at the canvas edge.
+    BODY_LO, BODY_HI = -1.0, 2.0
+
+    for j in range(cand.shape[0]):
+        if not is_valid_kp(cand[j]):
+            continue
+
+        x, y = cand[j][0], cand[j][1]
+
+        # Strategy 1: extreme-outlier guard for body joints
+        if x < BODY_LO or x > BODY_HI or y < BODY_LO or y > BODY_HI:
+            _mask_joint(cand, subset, j)
+            continue
+
+        # Strategy 2: joint-type visibility
+        if visible_joints is not None and j not in visible_joints:
+            _mask_joint(cand, subset, j)
+            continue
+
+        # Strategy 3: Y-axis spatial clipping (with same generous margin)
+        if y < y_min - 1.0 or y > y_max + 1.0:
+            _mask_joint(cand, subset, j)
+
+    # Mask hands: strict [0, 1] canvas bounds for individual keypoints
+    for hand_idx, wrist_idx in HAND_WRIST_MAP.items():
+        if not is_valid_kp(cand[wrist_idx]):
+            pose['hands'][hand_idx] = -1.0
+        else:
+            for k in range(pose['hands'].shape[1]):
+                kp = pose['hands'][hand_idx, k]
+                if is_valid_kp(kp):
+                    if kp[0] < 0 or kp[0] > 1 or kp[1] < 0 or kp[1] > 1:
+                        pose['hands'][hand_idx, k] = np.array([-1.0, -1.0])
+
+    # Mask face: strict [0, 1] canvas bounds for individual keypoints
+    if not is_valid_kp(cand[0]):
+        pose['faces'][:] = -1.0
+    else:
+        for fi in range(pose['faces'].shape[0]):
+            for k in range(pose['faces'].shape[1]):
+                kp = pose['faces'][fi, k]
+                if is_valid_kp(kp):
+                    if kp[0] < 0 or kp[0] > 1 or kp[1] < 0 or kp[1] > 1:
+                        pose['faces'][fi, k] = np.array([-1.0, -1.0])
+
+    return pose
+
+
+# =============================================================================
+# Motion attenuation for partial-body / close-up references
+# =============================================================================
+def _shift_all_keypoints(pose, dx, dy):
+    """Shift every valid keypoint in a pose dict by (dx, dy)."""
+    cand = pose['bodies']['candidate']
+    for j in range(cand.shape[0]):
+        if is_valid_kp(cand[j]):
+            cand[j][0] += dx
+            cand[j][1] += dy
+    for hi in range(pose['hands'].shape[0]):
+        for k in range(pose['hands'].shape[1]):
+            if is_valid_kp(pose['hands'][hi, k]):
+                pose['hands'][hi, k][0] += dx
+                pose['hands'][hi, k][1] += dy
+    for fi in range(pose['faces'].shape[0]):
+        for k in range(pose['faces'].shape[1]):
+            if is_valid_kp(pose['faces'][fi, k]):
+                pose['faces'][fi, k][0] += dx
+                pose['faces'][fi, k][1] += dy
+
+
+def _get_anchor(cand):
+    """Return the best anchor position: nose > neck > hip center."""
+    if is_valid_kp(cand[0]):
+        return cand[0].copy()
+    if is_valid_kp(cand[1]):
+        return cand[1].copy()
+    if is_valid_kp(cand[8]) and is_valid_kp(cand[11]):
+        return 0.5 * (cand[8] + cand[11])
+    return None
+
+
+def attenuate_motion(retargeted, sx, sy, ref_anchor):
+    """De-amplify global motion caused by coordinate-transform scaling.
+
+    When the coord transform maps from edited-ref space to original-ref
+    space, it multiplies all positions by (sx, sy).  This also amplifies
+    frame-to-frame motion: a 2% sway at 5x scale becomes 10%.  For
+    close-up references this pushes the skeleton off-canvas.
+
+    This function:
+    1. Anchors the first frame to ``ref_anchor`` (position correction).
+    2. For subsequent frames, keeps only 1/|scale| of the per-frame
+       displacement relative to frame 0, preserving the *original*
+       motion magnitude while removing the amplification.
+
+    Result: head tilts, expressions, and subtle sway are preserved at
+    their natural scale; the skeleton stays centred on the canvas.
+
+    Parameters
+    ----------
+    retargeted  : list of pose dicts (already coord-transformed).
+    sx, sy      : float, coordinate-transform scale factors.
+    ref_anchor  : (2,) target anchor position in original-ref space.
+    """
+    if len(retargeted) == 0:
+        return retargeted
+
+    scale_mag = max(abs(sx), abs(sy), 1.0)
+
+    # Motion retention factor: inverse of scale, clamped to [0.1, 1.0].
+    # scale=1 → keep 100%; scale=5 → keep 20%; scale=10 → keep 10%.
+    motion_retain = np.clip(1.0 / scale_mag, 0.1, 1.0)
+
+    # Step 1: anchor frame 0 to ref_anchor
+    f0_cand = retargeted[0]['bodies']['candidate']
+    f0_anchor = _get_anchor(f0_cand)
+    if f0_anchor is None:
+        return retargeted
+
+    initial_offset = ref_anchor - f0_anchor
+    _shift_all_keypoints(retargeted[0], initial_offset[0], initial_offset[1])
+
+    # Record the corrected frame-0 anchor
+    f0_anchor_corrected = ref_anchor.copy()
+
+    # Step 2: for each subsequent frame, attenuate displacement from frame 0
+    for f in range(1, len(retargeted)):
+        cand = retargeted[f]['bodies']['candidate']
+        anchor = _get_anchor(cand)
+        if anchor is None:
+            _shift_all_keypoints(retargeted[f],
+                                 initial_offset[0], initial_offset[1])
+            continue
+
+        # Raw displacement of this frame's anchor from frame 0's anchor
+        # (both still in un-corrected transformed space).
+        raw_disp = anchor - f0_anchor
+
+        # The transform amplified this displacement by ~scale_mag.
+        # Keep only 1/scale_mag of it to restore the original magnitude.
+        desired_disp = raw_disp * motion_retain
+
+        # Target position = corrected frame-0 anchor + attenuated motion
+        target = f0_anchor_corrected + desired_disp
+        shift = target - anchor
+        _shift_all_keypoints(retargeted[f], shift[0], shift[1])
+
+    return retargeted
+
+
+# =============================================================================
+# Position correction (Issue 2: character position mismatch)
+# =============================================================================
+def apply_position_correction(retargeted_seq, target_ref_cand):
+    """Shift all frames so the first frame's anchor matches the reference.
+
+    Uses neck (joint 1) as the primary anchor; falls back to hip center
+    if neck is not detected in the reference.
+    """
+    if len(retargeted_seq) == 0:
+        return retargeted_seq
+
+    # Determine anchor joint from reference
+    if is_valid_kp(target_ref_cand[1]):
+        ref_anchor = target_ref_cand[1].copy()
+        anchor_idx = 1
+    elif (is_valid_kp(target_ref_cand[8])
+          and is_valid_kp(target_ref_cand[11])):
+        ref_anchor = 0.5 * (target_ref_cand[8] + target_ref_cand[11])
+        anchor_idx = None
+    else:
+        return retargeted_seq
+
+    # Compute anchor from first retargeted frame
+    first_cand = retargeted_seq[0]['bodies']['candidate']
+    if anchor_idx is not None:
+        if not is_valid_kp(first_cand[anchor_idx]):
+            return retargeted_seq
+        ret_anchor = first_cand[anchor_idx].copy()
+    else:
+        if (not is_valid_kp(first_cand[8])
+                or not is_valid_kp(first_cand[11])):
+            return retargeted_seq
+        ret_anchor = 0.5 * (first_cand[8] + first_cand[11])
+
+    offset = ref_anchor - ret_anchor
+    if np.linalg.norm(offset) < 1e-6:
+        return retargeted_seq
+
+    for pose in retargeted_seq:
+        _shift_all_keypoints(pose, offset[0], offset[1])
+
+    return retargeted_seq
+
+
+# =============================================================================
 # DWpose Detector (unchanged from original)
 # =============================================================================
 class DWposeDetector:
@@ -276,6 +714,64 @@ def draw_pose(pose, H, W):
     canvas_without_face = copy.deepcopy(canvas)
     canvas = util.draw_facepose(canvas, faces)
     return canvas_without_face, canvas
+
+
+# =============================================================================
+# Auto max_bone_ratio: compute from skeleton scale difference
+# =============================================================================
+def auto_max_bone_ratio(ref_cand, drv_first_cand, floor=1.3, ceiling=3.0):
+    """Estimate a suitable max_bone_ratio from the overall scale difference
+    between the reference and the driving character's first frame.
+
+    Compares multiple body metrics (shoulder width, torso length, arm span)
+    and uses the median ratio with a safety margin.
+
+    Returns a float clamped to [floor, ceiling].
+    """
+    ratios = []
+
+    # Shoulder width
+    for a, b in [(2, 5)]:
+        if (is_valid_kp(ref_cand[a]) and is_valid_kp(ref_cand[b])
+                and is_valid_kp(drv_first_cand[a])
+                and is_valid_kp(drv_first_cand[b])):
+            ref_d = bone_length(ref_cand[a], ref_cand[b])
+            drv_d = bone_length(drv_first_cand[a], drv_first_cand[b])
+            if drv_d > 1e-6:
+                ratios.append(ref_d / drv_d)
+
+    # Torso length (neck to hip-center)
+    ref_hip_ok = is_valid_kp(ref_cand[8]) and is_valid_kp(ref_cand[11])
+    drv_hip_ok = (is_valid_kp(drv_first_cand[8])
+                  and is_valid_kp(drv_first_cand[11]))
+    if (is_valid_kp(ref_cand[1]) and ref_hip_ok
+            and is_valid_kp(drv_first_cand[1]) and drv_hip_ok):
+        ref_hip = 0.5 * (ref_cand[8] + ref_cand[11])
+        drv_hip = 0.5 * (drv_first_cand[8] + drv_first_cand[11])
+        ref_d = bone_length(ref_cand[1], ref_hip)
+        drv_d = bone_length(drv_first_cand[1], drv_hip)
+        if drv_d > 1e-6:
+            ratios.append(ref_d / drv_d)
+
+    # Individual bone lengths
+    for parent, child in KINEMATIC_CHAINS:
+        rp, rc = ref_cand[parent], ref_cand[child]
+        dp, dc = drv_first_cand[parent], drv_first_cand[child]
+        if (is_valid_kp(rp) and is_valid_kp(rc)
+                and is_valid_kp(dp) and is_valid_kp(dc)):
+            ref_d = bone_length(rp, rc)
+            drv_d = bone_length(dp, dc)
+            if drv_d > 1e-6 and ref_d > 1e-6:
+                ratios.append(ref_d / drv_d)
+
+    if len(ratios) == 0:
+        return ceiling
+
+    median_ratio = float(np.median(ratios))
+    # Use 1.3x the median as the max ratio (some headroom for variation)
+    auto_val = max(median_ratio, 1.0 / median_ratio) * 1.3
+    result = float(np.clip(auto_val, floor, ceiling))
+    return result
 
 
 # =============================================================================
@@ -840,11 +1336,72 @@ def mp_main(args):
         return
 
     # Step 2: detect poses for reference and video-character images
+    partial_body_mode = (hasattr(args, 'edited_ref_name')
+                         and args.edited_ref_name)
+
     ref_frame = cv2.imread(args.ref_name, cv2.IMREAD_COLOR)
     assert ref_frame is not None, \
         "Cannot read reference image: {}".format(args.ref_name)
-    pose_ref = dwpose_model(ref_frame)
-    ref_cand = pose_ref['bodies']['candidate']
+    pose_orig_ref = dwpose_model(ref_frame)
+    orig_ref_cand = pose_orig_ref['bodies']['candidate']
+
+    if partial_body_mode:
+        logger.info("Partial-body mode: using edited ref for retargeting.")
+        edit_ref_frame = cv2.imread(args.edited_ref_name, cv2.IMREAD_COLOR)
+        assert edit_ref_frame is not None, \
+            "Cannot read edited reference image: {}".format(
+                args.edited_ref_name)
+        pose_edit_ref = dwpose_model(edit_ref_frame)
+        edit_ref_cand = pose_edit_ref['bodies']['candidate']
+
+        # Use the edited (full-body) ref for retargeting
+        ref_cand = edit_ref_cand
+
+        # Coordinate transform: edited ref space -> original ref space
+        coord_tf = compute_coord_transform(orig_ref_cand, edit_ref_cand)
+        logger.info("Coord transform (edited->orig): "
+                     "sx={:.3f} sy={:.3f} tx={:.3f} ty={:.3f}".format(
+                         *coord_tf))
+
+        # Visibility region
+        vis_margin = getattr(args, 'visibility_margin', 0.05)
+        sam_ckpt = getattr(args, 'sam_checkpoint', None)
+        using_sam = False
+        if sam_ckpt and _SAM_AVAILABLE:
+            logger.info("Loading SAM from {} ...".format(sam_ckpt))
+            sam_pred = load_sam_predictor(sam_ckpt)
+            yolox_sess = dwpose_model.pose_estimation.session_det
+            visible_region = compute_visibility_region_sam(
+                ref_frame, sam_pred, yolox_sess, margin=vis_margin)
+            logger.info("Visible region (SAM): y=[{:.3f},{:.3f}] "
+                         "x=[{:.3f},{:.3f}]".format(*visible_region))
+            del sam_pred
+            torch.cuda.empty_cache()
+            using_sam = True
+        else:
+            if sam_ckpt and not _SAM_AVAILABLE:
+                logger.warning("SAM checkpoint provided but "
+                               "segment-anything is not installed. "
+                               "Falling back to keypoint-based visibility.")
+            visible_region = compute_visibility_region_keypoints(
+                orig_ref_cand, margin=vis_margin)
+            logger.info("Visible region (keypoints): y=[{:.3f},{:.3f}] "
+                         "x=[{:.3f},{:.3f}]".format(*visible_region))
+
+        # Kinematic-chain-based joint visibility.
+        # SAM path: propagate through kinematic chains (arms extend
+        # from shoulders even if not in the original ref).
+        # No-SAM path: only directly detected joints are visible.
+        visible_joints = compute_visible_joint_set(
+            orig_ref_cand, propagate=using_sam)
+        logger.info("Visible joints ({}): {}".format(
+            "propagated" if using_sam else "detected-only",
+            sorted(visible_joints)))
+    else:
+        ref_cand = orig_ref_cand
+        coord_tf = None
+        visible_region = None
+        visible_joints = None
 
     base_char_image = cv2.imread(args.video_char_image, cv2.IMREAD_COLOR)
     assert base_char_image is not None, \
@@ -872,6 +1429,14 @@ def mp_main(args):
     logger.info("Running angle-based pose retargeting ...")
     base_drv_cand = results_vis[0]['bodies']['candidate'].copy()
 
+    # Auto max_bone_ratio: when set to 0, compute from skeleton scale diff
+    if args.max_bone_ratio <= 0:
+        mbr = auto_max_bone_ratio(ref_cand, base_drv_cand)
+        logger.info("Auto max_bone_ratio: {:.2f}".format(mbr))
+    else:
+        mbr = args.max_bone_ratio
+        logger.info("Using max_bone_ratio: {:.2f}".format(mbr))
+
     retargeted = []
     for f in range(len(results_vis)):
         drv_cand = results_vis[f]['bodies']['candidate']
@@ -890,9 +1455,6 @@ def mp_main(args):
 
         # Improvement 7: two-anchor root position
         root = compute_root_position(scaled_cand, ref_cand, base_drv_cand)
-
-        # Improvement 2: angle-based body retargeting (with ratio clamping)
-        mbr = args.max_bone_ratio
         ret_body = retarget_body_angle_based(
             scaled_cand, ref_cand, ref_bone_lengths, root,
             max_bone_ratio=mbr)
@@ -915,12 +1477,53 @@ def mp_main(args):
             'faces': ret_f,
         })
 
+    # Step 5.5: partial-body coord transform + motion attenuation
+    if partial_body_mode and coord_tf is not None:
+        sx, sy, tx, ty = coord_tf
+        logger.info("Applying coordinate transform: sx={:.2f}, sy={:.2f}, "
+                     "tx={:.2f}, ty={:.2f}".format(sx, sy, tx, ty))
+
+        # Apply coordinate transform to all frames
+        for pose in retargeted:
+            apply_coord_transform_pose(pose, sx, sy, tx, ty)
+
+        # Compute reference anchor in original-ref space
+        ref_anchor = _get_anchor(orig_ref_cand)
+        if ref_anchor is not None:
+            scale_mag = max(abs(sx), abs(sy), 1.0)
+            if scale_mag > 1.5:
+                logger.info("Motion attenuation: scale_mag={:.1f}, "
+                            "retaining {:.0f}% of global motion".format(
+                                scale_mag, 100.0 / scale_mag))
+            retargeted = attenuate_motion(retargeted, sx, sy, ref_anchor)
+        else:
+            logger.warning("No valid anchor in original ref; "
+                           "skipping motion attenuation.")
+
+        # Apply visibility mask AFTER motion attenuation (final positions)
+        if visible_region is not None:
+            for pose in retargeted:
+                apply_visibility_mask(pose, visible_region,
+                                      visible_joints=visible_joints)
+    else:
+        # Standard mode: simple position correction
+        logger.info("Applying position correction ...")
+        retargeted = apply_position_correction(retargeted, orig_ref_cand)
+
     # Step 6: ground-plane constraints (Improvement 5)
-    logger.info("Applying ground-plane constraints ...")
-    lc, rc = detect_foot_contacts(retargeted)
-    retargeted = apply_ground_constraints(retargeted, lc, rc)
-    logger.info("  foot contacts: left={} frames, right={} frames".format(
-        int(np.sum(lc)), int(np.sum(rc))))
+    # Skip if lower body is not visible (partial-body mode)
+    lower_body_visible = (is_valid_kp(orig_ref_cand[10])
+                          or is_valid_kp(orig_ref_cand[13])
+                          or is_valid_kp(orig_ref_cand[18])
+                          or is_valid_kp(orig_ref_cand[19]))
+    if lower_body_visible:
+        logger.info("Applying ground-plane constraints ...")
+        lc, rc = detect_foot_contacts(retargeted)
+        retargeted = apply_ground_constraints(retargeted, lc, rc)
+        logger.info("  foot contacts: left={} frames, right={} frames".format(
+            int(np.sum(lc)), int(np.sum(rc))))
+    else:
+        logger.info("Skipping ground constraints (lower body not visible).")
 
     # Step 7: temporal smoothing (Improvement 1)
     logger.info("Applying temporal smoothing (One Euro Filter) ...")
@@ -993,13 +1596,30 @@ if __name__ == '__main__':
         "--smooth_beta", type=float, default=0.3,
         help="One-Euro beta; higher = less lag on fast motion (default: 0.3).")
     parser.add_argument(
-        "--max_bone_ratio", type=float, default=1.5,
+        "--max_bone_ratio", type=float, default=0,
         help="Max allowed bone-length ratio between reference and driving "
-             "characters. Prevents unrealistic limb stretching when body "
-             "proportions differ a lot (default: 1.5).")
+             "characters. Set to 0 for automatic detection based on the "
+             "actual scale difference between skeletons (recommended). "
+             "A positive value (e.g., 1.5) is used as-is (default: 0 = auto).")
     parser.add_argument(
         "--video_only", action="store_true",
         help="Only save the video; delete individual frame images after "
              "encoding.")
+    parser.add_argument(
+        "--edited_ref_name", type=str, default="",
+        help="Path to an edited (full-body) version of the reference image. "
+             "When provided, enables partial-body mode: retargeting uses "
+             "the full skeleton from this image, then maps poses back to "
+             "the original reference's visible region.")
+    parser.add_argument(
+        "--sam_checkpoint", type=str, default="",
+        help="Path to a SAM checkpoint (e.g., sam_vit_b_01ec64.pth) for "
+             "precise person-mask visibility detection. Requires "
+             "segment-anything to be installed. Falls back to keypoint-based "
+             "visibility if not provided.")
+    parser.add_argument(
+        "--visibility_margin", type=float, default=0.05,
+        help="Margin (normalised) added around the detected visible region "
+             "in partial-body mode (default: 0.05).")
     args = parser.parse_args()
     mp_main(args)
