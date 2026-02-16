@@ -901,12 +901,6 @@ def mp_main(args):
     os.makedirs(save_dir, exist_ok=True)
 
     render_h, render_w = 768, 512
-    video_path = os.path.join(save_dir, "pose_sequence.mp4")
-    # Use mp4v (MPEG-4 Part 2) to avoid green-frame artefacts that
-    # H.264 fourcc ('avc1'/'H264') can produce with OpenCV.
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video_writer = cv2.VideoWriter(
-        video_path, fourcc, args.fps, (render_w, render_h))
 
     logger.info("Rendering {} frames to {} ...".format(
         len(retargeted), save_dir))
@@ -914,9 +908,14 @@ def mp_main(args):
         wo_face, _ = draw_pose(pose, H=render_h, W=render_w)
         img_path = os.path.join(save_dir, "{:04d}.jpg".format(i))
         cv2.imwrite(img_path, wo_face)
-        video_writer.write(wo_face)
 
-    video_writer.release()
+    video_path = os.path.join(save_dir, "pose_sequence.mp4")
+    ffmpeg_cmd = (
+        'ffmpeg -y -framerate {} -i {}/%04d.jpg '
+        '-c:v libx264 -pix_fmt yuv420p -crf 18 {}'
+    ).format(args.fps, save_dir, video_path)
+    logger.info("Encoding video with ffmpeg ...")
+    os.system(ffmpeg_cmd)
     logger.info("Saved video: {}".format(video_path))
     logger.info("Done.")
 

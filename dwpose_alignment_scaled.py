@@ -746,17 +746,19 @@ def mp_main(args):
         results_vis[i]['hands'] += offset[np.newaxis, np.newaxis, :]
     
     render_h, render_w = 768, 512
-    video_path = save_motion + '/' + 'pose_sequence.mp4'
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video_writer = cv2.VideoWriter(video_path, fourcc, args.fps, (render_w, render_h))
 
     for i in range(len(results_vis)):
         dwpose_woface, dwpose_wface = draw_pose(results_vis[i], H=render_h, W=render_w)
         img_path = save_motion+'/' + str(i).zfill(4) + '.jpg'
         cv2.imwrite(img_path, dwpose_woface)
-        video_writer.write(dwpose_woface)
 
-    video_writer.release()
+    video_path = save_motion + '/' + 'pose_sequence.mp4'
+    ffmpeg_cmd = (
+        'ffmpeg -y -framerate {} -i {}/%04d.jpg '
+        '-c:v libx264 -pix_fmt yuv420p -crf 18 {}'
+    ).format(args.fps, save_motion, video_path)
+    logger.info("Encoding video with ffmpeg ...")
+    os.system(ffmpeg_cmd)
     logger.info("Saved video: {}".format(video_path))
 
     dwpose_woface, dwpose_wface = draw_pose(pose_ref, H=render_h, W=render_w)
