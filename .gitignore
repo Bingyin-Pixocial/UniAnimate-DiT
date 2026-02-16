@@ -11,4 +11,4 @@ data/saved_pose/
 Wan2.1-I2V-14B-720P/
 data/pix/
 pose_results/
-data/
+data/checkpoints/

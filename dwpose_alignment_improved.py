@@ -894,19 +894,30 @@ def mp_main(args):
         beta=args.smooth_beta,
     )
 
-    # Step 8: render and save
+    # Step 8: render and save (images + video)
     save_dir = args.saved_pose_dir
     if os.path.exists(save_dir):
         shutil.rmtree(save_dir)
     os.makedirs(save_dir, exist_ok=True)
 
+    render_h, render_w = 768, 512
+    video_path = os.path.join(save_dir, "pose_sequence.mp4")
+    # Use mp4v (MPEG-4 Part 2) to avoid green-frame artefacts that
+    # H.264 fourcc ('avc1'/'H264') can produce with OpenCV.
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video_writer = cv2.VideoWriter(
+        video_path, fourcc, args.fps, (render_w, render_h))
+
     logger.info("Rendering {} frames to {} ...".format(
         len(retargeted), save_dir))
     for i, pose in enumerate(retargeted):
-        wo_face, _ = draw_pose(pose, H=768, W=512)
+        wo_face, _ = draw_pose(pose, H=render_h, W=render_w)
         img_path = os.path.join(save_dir, "{:04d}.jpg".format(i))
         cv2.imwrite(img_path, wo_face)
+        video_writer.write(wo_face)
 
+    video_writer.release()
+    logger.info("Saved video: {}".format(video_path))
     logger.info("Done.")
 
 
