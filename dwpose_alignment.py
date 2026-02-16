@@ -710,7 +710,7 @@ def mp_main(args):
     render_h, render_w = 768, 512
     video_path = save_motion + '/' + 'pose_sequence.mp4'
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video_writer = cv2.VideoWriter(video_path, fourcc, 30.0, (render_w, render_h))
+    video_writer = cv2.VideoWriter(video_path, fourcc, args.fps, (render_w, render_h))
 
     for i in range(len(results_vis)):
         dwpose_woface, dwpose_wface = draw_pose(results_vis[i], H=render_h, W=render_w)
@@ -736,6 +736,7 @@ if __name__=='__main__':
         parser.add_argument("--video_char_image", type=str, required=True, default="",)
         parser.add_argument("--source_video_paths", type=str, default="data/videos/source_video.mp4",)
         parser.add_argument("--saved_pose_dir", type=str, default="data/saved_pose/IMG_20240514_104337",)
+        parser.add_argument("--fps", type=float, default=30.0, help="FPS of the output pose video (default: 30).",)
         args = parser.parse_args()
 
         return args
