@@ -199,6 +199,8 @@ New optional arguments (vs original):
 - `--fps` &mdash; video FPS for temporal smoothing (default: 30)
 - `--smooth_min_cutoff` &mdash; One-Euro min cutoff; higher = less smoothing (default: 1.7)
 - `--smooth_beta` &mdash; One-Euro beta; higher = less lag on fast motion (default: 0.3)
+- `--max_bone_ratio` &mdash; maximum allowed bone-length ratio between reference and driving characters; prevents unrealistic limb stretching when body proportions differ significantly (default: 1.5)
+- `--video_only` &mdash; only keep the output video; individual frame images are deleted after encoding (available in all three pose alignment scripts)
 
 
 

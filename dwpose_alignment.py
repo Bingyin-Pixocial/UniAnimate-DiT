@@ -723,6 +723,12 @@ def mp_main(args):
     os.system(ffmpeg_cmd)
     logger.info("Saved video: {}".format(video_path))
 
+    if getattr(args, 'video_only', False):
+        for fn in os.listdir(save_motion):
+            if fn.endswith('.jpg'):
+                os.remove(os.path.join(save_motion, fn))
+        logger.info("--video_only: removed individual frame images.")
+
     dwpose_woface, dwpose_wface = draw_pose(pose_ref, H=render_h, W=render_w)
     img_path = save_warp+'/' + 'pose.jpg'
     # cv2.imwrite(img_path, dwpose_woface)
@@ -739,6 +745,7 @@ if __name__=='__main__':
         parser.add_argument("--source_video_paths", type=str, default="data/videos/source_video.mp4",)
         parser.add_argument("--saved_pose_dir", type=str, default="data/saved_pose/IMG_20240514_104337",)
         parser.add_argument("--fps", type=float, default=30.0, help="FPS of the output pose video (default: 30).",)
+        parser.add_argument("--video_only", action="store_true", help="Only save the video; delete individual frame images after encoding.",)
         args = parser.parse_args()
 
         return args

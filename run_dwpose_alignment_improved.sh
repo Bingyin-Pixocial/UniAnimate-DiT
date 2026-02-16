@@ -5,6 +5,7 @@
 #   --fps               Video FPS for smoothing (default: 30)
 #   --smooth_min_cutoff One-Euro min cutoff (default: 1.7)
 #   --smooth_beta       One-Euro beta (default: 0.3)
+#   --max_bone_ratio    Max bone-length ratio clamp (default: 1.5)
 
 python dwpose_alignment_improved.py \
   --ref_name data/images/complex_motions/ref/1_ref.jpg \
@@ -13,4 +14,5 @@ python dwpose_alignment_improved.py \
   --saved_pose_dir data/saved_pose/dwpose_improved_1_1 \
   --fps 16 \
   --smooth_min_cutoff 1.7 \
-  --smooth_beta 0.3
+  --smooth_beta 0.3 \
+  --max_bone_ratio 1.5

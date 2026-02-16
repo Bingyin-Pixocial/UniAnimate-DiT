@@ -5,10 +5,10 @@
 #  --ratio_factor 0.8
 
 
-python dwpose_alignment.py --ref_name data/images/complex_motions/ref/1_ref.jpg \
+python dwpose_alignment.py --ref_name data/images/complex_motions/ref/32_ref.jpg \
  --video_char_image data/images/complex_motions/video_char/1_char.png \
  --source_video_paths data/videos/complex_motions/1.mp4 \
- --saved_pose_dir data/saved_pose/dwpose_1_1 \
+ --saved_pose_dir data/saved_pose/dwpose_32_1 \
  --fps 16
 
 

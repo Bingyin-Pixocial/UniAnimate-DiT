@@ -294,17 +294,21 @@ def compute_ref_bone_lengths(ref_candidate):
 
 
 def retarget_body_angle_based(driving_cand, ref_cand,
-                              ref_bone_lengths, root_pos):
+                              ref_bone_lengths, root_pos,
+                              max_bone_ratio=1.5):
     """
-    Reconstruct skeleton using driving-pose directions + reference
-    bone lengths.
+    Reconstruct skeleton using driving-pose directions + **clamped**
+    reference bone lengths.
 
     For each bone (parent -> child) in the kinematic chain:
-      direction = normalize(driving_child - driving_parent)
-      child_pos = retargeted_parent + direction * ref_bone_length
+      direction  = normalize(driving_child - driving_parent)
+      ratio      = clamp(ref_len / drv_len, 1/max_bone_ratio, max_bone_ratio)
+      used_len   = drv_len * ratio
+      child_pos  = retargeted_parent + direction * used_len
 
-    This preserves the driving motion's joint angles while applying
-    the reference character's body proportions.
+    The ratio clamping prevents unrealistically stretched or compressed
+    limbs when the reference and driving characters have very different
+    body proportions.
 
     Parameters
     ----------
@@ -312,6 +316,8 @@ def retarget_body_angle_based(driving_cand, ref_cand,
     ref_cand         : (20, 2) reference character keypoints.
     ref_bone_lengths : dict (parent, child) -> float.
     root_pos         : (2,) neck position for kinematic root.
+    max_bone_ratio   : float, maximum allowed bone-length ratio
+                       between reference and driving (default 1.5).
 
     Returns
     -------
@@ -319,6 +325,8 @@ def retarget_body_angle_based(driving_cand, ref_cand,
     """
     retargeted = driving_cand.copy()
     retargeted[1] = root_pos
+
+    inv_ratio = 1.0 / max_bone_ratio
 
     for parent, child in KINEMATIC_CHAINS:
         drv_p = driving_cand[parent]
@@ -353,10 +361,17 @@ def retarget_body_angle_based(driving_cand, ref_cand,
                 direction = normalize_vec(ref_c - ref_p)
 
         ref_len = ref_bone_lengths.get((parent, child))
-        if ref_len is None:
-            ref_len = bone_length(drv_p, drv_c)
+        drv_len = bone_length(drv_p, drv_c)
 
-        retargeted[child] = retargeted[parent] + direction * ref_len
+        if ref_len is not None and drv_len > 1e-6:
+            ratio = np.clip(ref_len / drv_len, inv_ratio, max_bone_ratio)
+            used_len = drv_len * ratio
+        elif ref_len is not None:
+            used_len = ref_len
+        else:
+            used_len = drv_len
+
+        retargeted[child] = retargeted[parent] + direction * used_len
 
     return retargeted
 
@@ -466,9 +481,15 @@ def interpolate_missing_keypoints(poses_seq):
 # =============================================================================
 # Improvement 4: retarget hands / face relative to parent joints
 # =============================================================================
-def retarget_hands(drv_hands, drv_cand, ret_cand, ref_cand):
-    """Re-anchor each hand at its retargeted wrist, scale by forearm."""
+def retarget_hands(drv_hands, drv_cand, ret_cand, ref_cand,
+                   max_bone_ratio=1.5):
+    """Re-anchor each hand at its retargeted wrist, scale by forearm.
+
+    The scale ratio is clamped to [1/max_bone_ratio, max_bone_ratio] to
+    prevent unrealistically large or small hands.
+    """
     ret_hands = drv_hands.copy()
+    inv_ratio = 1.0 / max_bone_ratio
 
     for hand_idx, wrist_idx in HAND_WRIST_MAP.items():
         drv_wrist = drv_cand[wrist_idx]
@@ -482,7 +503,8 @@ def retarget_hands(drv_hands, drv_cand, ret_cand, ref_cand):
         ref_forearm = bone_length(ref_cand[elbow_idx],
                                   ref_cand[wrist_idx])
         if drv_forearm > 1e-6:
-            hand_scale = ref_forearm / drv_forearm
+            hand_scale = np.clip(ref_forearm / drv_forearm,
+                                 inv_ratio, max_bone_ratio)
         else:
             hand_scale = 1.0
 
@@ -494,8 +516,13 @@ def retarget_hands(drv_hands, drv_cand, ret_cand, ref_cand):
     return ret_hands
 
 
-def retarget_face(drv_faces, drv_cand, ret_cand, ref_cand):
-    """Re-anchor face at retargeted nose, scale by head proportion."""
+def retarget_face(drv_faces, drv_cand, ret_cand, ref_cand,
+                  max_bone_ratio=1.5):
+    """Re-anchor face at retargeted nose, scale by head proportion.
+
+    The scale ratio is clamped to [1/max_bone_ratio, max_bone_ratio] to
+    prevent unrealistically large or small faces.
+    """
     ret_faces = drv_faces.copy()
     nose_idx = 0
     neck_idx = 1
@@ -507,7 +534,9 @@ def retarget_face(drv_faces, drv_cand, ret_cand, ref_cand):
 
     drv_head = bone_length(drv_cand[neck_idx], drv_cand[nose_idx])
     ref_head = bone_length(ref_cand[neck_idx], ref_cand[nose_idx])
-    scale = (ref_head / drv_head) if drv_head > 1e-6 else 1.0
+    inv_ratio = 1.0 / max_bone_ratio
+    scale = (np.clip(ref_head / drv_head, inv_ratio, max_bone_ratio)
+             if drv_head > 1e-6 else 1.0)
 
     for fi in range(drv_faces.shape[0]):
         for kp in range(drv_faces.shape[1]):
@@ -592,7 +621,11 @@ def apply_ground_constraints(poses_seq, left_c, right_c):
 # =============================================================================
 def per_frame_scale(drv_cand, base_cand):
     """Ratio of shoulder width: current frame vs base frame.
-    Values > 1 mean the person moved closer to the camera."""
+    Values > 1 mean the person moved closer to the camera.
+
+    Clamped to [0.75, 1.35] to prevent over-correction that can
+    distort poses when the shoulder detection jitters.
+    """
     if not (is_valid_kp(drv_cand[2]) and is_valid_kp(drv_cand[5])
             and is_valid_kp(base_cand[2])
             and is_valid_kp(base_cand[5])):
@@ -601,7 +634,7 @@ def per_frame_scale(drv_cand, base_cand):
     base_w = bone_length(base_cand[2], base_cand[5])
     if base_w < 1e-6:
         return 1.0
-    return float(np.clip(drv_w / base_w, 0.5, 2.0))
+    return float(np.clip(drv_w / base_w, 0.75, 1.35))
 
 
 # =============================================================================
@@ -858,16 +891,20 @@ def mp_main(args):
         # Improvement 7: two-anchor root position
         root = compute_root_position(scaled_cand, ref_cand, base_drv_cand)
 
-        # Improvement 2: angle-based body retargeting
+        # Improvement 2: angle-based body retargeting (with ratio clamping)
+        mbr = args.max_bone_ratio
         ret_body = retarget_body_angle_based(
-            scaled_cand, ref_cand, ref_bone_lengths, root)
+            scaled_cand, ref_cand, ref_bone_lengths, root,
+            max_bone_ratio=mbr)
 
         # Improvement 8: physical plausibility
         ret_body = validate_pose(ret_body)
 
         # Improvement 4: hands and face relative to parent joints
-        ret_h = retarget_hands(drv_hands, drv_cand, ret_body, ref_cand)
-        ret_f = retarget_face(drv_faces, drv_cand, ret_body, ref_cand)
+        ret_h = retarget_hands(drv_hands, drv_cand, ret_body, ref_cand,
+                               max_bone_ratio=mbr)
+        ret_f = retarget_face(drv_faces, drv_cand, ret_body, ref_cand,
+                              max_bone_ratio=mbr)
 
         retargeted.append({
             'bodies': {
@@ -917,6 +954,13 @@ def mp_main(args):
     logger.info("Encoding video with ffmpeg ...")
     os.system(ffmpeg_cmd)
     logger.info("Saved video: {}".format(video_path))
+
+    if getattr(args, 'video_only', False):
+        for fn in os.listdir(save_dir):
+            if fn.endswith('.jpg'):
+                os.remove(os.path.join(save_dir, fn))
+        logger.info("--video_only: removed individual frame images.")
+
     logger.info("Done.")
 
 
@@ -948,5 +992,14 @@ if __name__ == '__main__':
     parser.add_argument(
         "--smooth_beta", type=float, default=0.3,
         help="One-Euro beta; higher = less lag on fast motion (default: 0.3).")
+    parser.add_argument(
+        "--max_bone_ratio", type=float, default=1.5,
+        help="Max allowed bone-length ratio between reference and driving "
+             "characters. Prevents unrealistic limb stretching when body "
+             "proportions differ a lot (default: 1.5).")
+    parser.add_argument(
+        "--video_only", action="store_true",
+        help="Only save the video; delete individual frame images after "
+             "encoding.")
     args = parser.parse_args()
     mp_main(args)
