@@ -13,3 +13,4 @@ data/pix/
 pose_results/
 data/checkpoints/
 data/
+*.sh

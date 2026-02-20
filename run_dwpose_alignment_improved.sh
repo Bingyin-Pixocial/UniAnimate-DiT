@@ -26,7 +26,7 @@
 
 
 python dwpose_alignment_improved.py \
-  --ref_name data/images/complex_motions/ref/3_ref_edited.jpg \
+  --ref_name data/images/complex_motions/ref/3_ref_edited.png \
   --video_char_image data/images/complex_motions/video_char/hiphop69_char.png \
   --source_video_paths data/videos/complex_motions/hiphop69.mp4 \
   --saved_pose_dir data/saved_pose/dwpose_improved_3_edited_hiphop69 \

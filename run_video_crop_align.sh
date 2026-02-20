@@ -32,7 +32,7 @@ python video_crop_align.py \
   --ref_name data/images/complex_motions/ref/3_ref_front.png  \
   --source_video_paths data/videos/complex_motions/hiphop69.mp4 \
   --output_video data/cropped_videos/crop_align_3_front_hiphop69/cropped_video.mp4 \
-  --source_pose_video_paths /picassox/intelligent-cpfs/pixocial/bingyin.zhao/code/foundation_models/LTX-2/assets/poses/vace/train_Hiphop69_720P_src_video-pose_body_face_hand.mp4 \
-  --output_pose_video data/cropped_videos/crop_align_3_front_hiphop69/cropped_pose_video.mp4 \
+  --source_pose_video_paths /picassox/intelligent-cpfs/pixocial/bingyin.zhao/code/tools/UniAnimate-DiT/data/saved_pose/dwpose_improved_3_edited_hiphop69/pose_sequence.mp4 \
+  --output_pose_video data/cropped_videos/crop_align_3_front_hiphop69/cropped_retargeted_pose_video.mp4 \
   --sam_checkpoint checkpoints/sam_vit_h_4b8939.pth \
   --visibility_margin 0.05 \
