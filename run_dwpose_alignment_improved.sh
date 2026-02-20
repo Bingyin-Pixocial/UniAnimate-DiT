@@ -25,20 +25,20 @@
 #   --video_only
 
 
-# python dwpose_alignment_improved.py \
-#   --ref_name data/images/complex_motions/ref/3_ref_front.png \
-#   --video_char_image data/images/complex_motions/video_char/hiphop69_char_half_front.png \
-#   --source_video_paths data/videos/complex_motions/hiphop69_half.mp4 \
-#   --saved_pose_dir data/saved_pose/dwpose_improved_3_front_hiphop69_half_face \
-#   --fps 16 \
-#   --max_bone_ratio 0 \
-#   --draw_face \
-#   --video_only
+python dwpose_alignment_improved.py \
+  --ref_name data/images/complex_motions/ref/100_ref.jpg \
+  --video_char_image data/images/complex_motions/video_char/hiphop69_char.png \
+  --source_video_paths data/videos/complex_motions/hiphop69.mp4 \
+  --saved_pose_dir data/saved_pose/dwpose_improved_100_hiphop69 \
+  --fps 16 \
+  --max_bone_ratio 0 \
+  --draw_face \
+  --video_only
 
 # --- Example 2: partial-body mode (uncomment to use) ---
 # When the ref image shows only part of the body (e.g., face/upper body),
 # provide an edited full-body version via --edited_ref_name.
-#
+# #
 python dwpose_alignment_improved.py \
   --ref_name data/images/complex_motions/ref/3_ref_front.png \
   --edited_ref_name data/images/complex_motions/ref/3_ref_edited.png \
@@ -51,10 +51,10 @@ python dwpose_alignment_improved.py \
   --video_only
 
 
-# --- Example 3: partial-body mode with SAM mask (uncomment to use) ---
-# When the ref image shows only part of the body (e.g., face/upper body),
-# provide an edited full-body version via --edited_ref_name.
-#
+# # --- Example 3: partial-body mode with SAM mask (uncomment to use) ---
+# # When the ref image shows only part of the body (e.g., face/upper body),
+# # provide an edited full-body version via --edited_ref_name.
+# #
 python dwpose_alignment_improved.py \
   --ref_name data/images/complex_motions/ref/3_ref_front.png \
   --edited_ref_name data/images/complex_motions/ref/3_ref_edited.png \

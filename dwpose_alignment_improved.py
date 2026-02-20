@@ -613,6 +613,39 @@ def correct_ref_hips_for_partial_ref(ref_cand, torso_to_shoulder_ratio=1.35):
     return True
 
 
+def apply_face_ref_anchor_partial_body(retargeted_seq, orig_ref_cand,
+                                       pose_orig_ref, skip_frame_0=True):
+    """Stage 2 partial-body: apply ref_name face size to face (face already moved with body).
+
+    After coord transform, face keypoints already follow the body. Use ref_name
+    face keypoints only for size: scale each frame's face around its nose so
+    the face extent matches ref_name face extent. Modifies retargeted_seq in place.
+    """
+    if len(retargeted_seq) == 0:
+        return
+    if not is_valid_kp(orig_ref_cand[0]):
+        return
+    ref_extent = _face_extent(pose_orig_ref['faces'], orig_ref_cand[0])
+    if ref_extent is None:
+        return
+    start = 1 if skip_frame_0 else 0
+    for f in range(start, len(retargeted_seq)):
+        pose = retargeted_seq[f]
+        cand = pose['bodies']['candidate']
+        nose = cand[0]
+        if not is_valid_kp(nose):
+            continue
+        curr_extent = _face_extent(pose['faces'], nose)
+        if curr_extent is None or curr_extent < 1e-6:
+            continue
+        scale = np.clip(ref_extent / curr_extent, 0.5, 2.0)
+        for fi in range(pose['faces'].shape[0]):
+            for k in range(pose['faces'].shape[1]):
+                if is_valid_kp(pose['faces'][fi, k]):
+                    offset = pose['faces'][fi, k] - nose
+                    pose['faces'][fi, k] = nose + scale * offset
+
+
 def _inject_ref_pose_as_first_frame(retargeted_seq, pose_orig_ref):
     """Overwrite the first frame with the reference pose so it matches ref_pose.jpg.
 
@@ -1856,21 +1889,53 @@ def retarget_hands(drv_hands, drv_cand, ret_cand, ref_cand,
     return ret_hands
 
 
-def retarget_face(drv_faces, drv_cand, ret_cand, ref_cand,
+def _face_extent(faces, nose):
+    """Max distance from nose to any valid face keypoint; None if no valid kp."""
+    out = 0.0
+    for fi in range(faces.shape[0]):
+        for k in range(faces.shape[1]):
+            if is_valid_kp(faces[fi, k]):
+                d = np.linalg.norm(np.asarray(faces[fi, k]) - np.asarray(nose))
+                if d > out:
+                    out = d
+    return out if out > 1e-6 else None
+
+
+def retarget_face(drv_faces, drv_cand, ret_cand, ref_cand, ref_faces=None,
                   max_bone_ratio=1.5):
-    """Shift face keypoints by the nose delta (ret_nose - drv_nose)."""
-    ret_faces = drv_faces.copy()
+    """Nose delta so face follows body; then apply reference face size.
+
+    (1) Apply nose delta: translated_face = drv_face + (ret_nose - drv_nose)
+    so face keypoints follow the movement of the body skeleton.
+    (2) Use reference image face keypoints for face size: scale the translated
+    face around ret_nose so its extent matches the reference face size.
+    """
     nose_idx = 0
     drv_nose = drv_cand[nose_idx]
     ret_nose = ret_cand[nose_idx]
     if not is_valid_kp(drv_nose) or not is_valid_kp(ret_nose):
+        ret_faces = drv_faces.copy()
         ret_faces[:] = -1.0
         return ret_faces
     delta = ret_nose - drv_nose
-    for fi in range(drv_faces.shape[0]):
-        for kp in range(drv_faces.shape[1]):
-            if is_valid_kp(drv_faces[fi, kp]):
-                ret_faces[fi, kp] = drv_faces[fi, kp] + delta
+    # (1) Nose delta: face follows body
+    ret_faces = drv_faces.copy()
+    for fi in range(ret_faces.shape[0]):
+        for k in range(ret_faces.shape[1]):
+            if is_valid_kp(ret_faces[fi, k]):
+                ret_faces[fi, k] = ret_faces[fi, k] + delta
+    # (2) Reference face size: scale around ret_nose to match ref extent
+    if ref_faces is not None and ref_faces.shape == ret_faces.shape and is_valid_kp(ref_cand[nose_idx]):
+        ref_nose = ref_cand[nose_idx]
+        ref_extent = _face_extent(ref_faces, ref_nose)
+        curr_extent = _face_extent(ret_faces, ret_nose)
+        if ref_extent is not None and curr_extent is not None and curr_extent > 1e-6:
+            scale = np.clip(ref_extent / curr_extent, 0.5, 2.0)
+            for fi in range(ret_faces.shape[0]):
+                for k in range(ret_faces.shape[1]):
+                    if is_valid_kp(ret_faces[fi, k]):
+                        offset = ret_faces[fi, k] - ret_nose
+                        ret_faces[fi, k] = ret_nose + scale * offset
     return ret_faces
 
 
@@ -2303,8 +2368,12 @@ def mp_main(args):
 
     # Step 5: per-frame full-body retargeting (driving video → ref_cand).
     # In partial-body mode this is stage 1: video_char (driving video poses) → edited_ref_name.
+    # Face: use reference face keypoints (ref_name or edited_ref_name) and re-anchor at retargeted nose (no scaling).
     if partial_body_mode:
         logger.info("Stage 1 (full-body): retargeting video_char → edited_ref ...")
+        ref_pose_faces = pose_edit_ref['faces'].copy()
+    else:
+        ref_pose_faces = pose_orig_ref['faces'].copy()
     logger.info("Running angle-based pose retargeting ...")
     base_drv_cand = results_vis[0]['bodies']['candidate'].copy()
 
@@ -2377,9 +2446,10 @@ def mp_main(args):
                             ret_body[parent] + direction * ref_len)
 
         # Improvement 4: hands and face relative to parent joints
+        # Stage 1 (partial-body): face uses video_char (driving) vs edited_ref (ref_cand) for anchor/scale.
         # Use scaled driving body/hands/face so wrist (and nose) deltas are in one coordinate system
         ret_h = retarget_hands(scaled_hands, scaled_cand, ret_body, ref_cand)
-        ret_f = retarget_face(scaled_faces, scaled_cand, ret_body, ref_cand)
+        ret_f = retarget_face(scaled_faces, scaled_cand, ret_body, ref_cand, ref_faces=ref_pose_faces)
 
         retargeted.append({
             'bodies': {
@@ -2436,6 +2506,11 @@ def mp_main(args):
         # First frame exactly matches ref_pose.jpg (skeleton size and keypoint positions)
         _inject_ref_pose_as_first_frame(retargeted, pose_orig_ref)
         logger.info("First frame set to reference pose.")
+
+        # Stage 2 face: use ref_name face keypoints, re-anchor at each frame's nose (no scaling)
+        apply_face_ref_anchor_partial_body(
+            retargeted, orig_ref_cand, pose_orig_ref, skip_frame_0=True)
+        logger.info("Stage 2 face alignment (ref_name face re-anchored) applied.")
 
         # Optionally attenuate global motion when transform scale is large
         ref_anchor = _get_anchor(orig_ref_cand)
