@@ -192,13 +192,13 @@ bash run_xpose_alignment.sh
 | 7 | Two-anchor alignment | Hip-center-driven root position for natural lateral sway and vertical bounce |
 | 8 | Physical plausibility | Joint angle limits (elbows/knees) and canvas boundary clamping |
 | 9 | Partial-body support | When the reference image shows only part of the body (e.g., face/upper body), uses an edited full-body reference for retargeting, then maps poses back to the visible region via coordinate transform + visibility masking |
-| 10 | Position correction (final step) | **Applied last** after all other retargeting steps so nothing overwrites it. The **first frame’s** neck and hip keypoints (and knees in partial-body) are aligned to ref_name; the computed offset is applied to **all** frames so the retargeted pose sits in the correct position on the canvas. |
-| 11 | Motion attenuation | In partial-body mode, global sway/drift is scaled down inversely to the coordinate-transform zoom so close-up skeletons stay on canvas |
-| 12 | Auto max_bone_ratio | Automatic bone-length ratio limit computed from skeleton scale difference; set `--max_bone_ratio 0` (default) |
-| 13 | Partial-body coord transform | Edit→orig transform is fitted using **upper-body joints** by default; when the ref shows **upper legs** (hips or knees visible in the visible region), hip and knee keypoints are **included** so they are not excluded or misaligned. Otherwise upper-body only avoids biased-high ref hips |
-| 14 | Ref-hip correction (single ref) | When the reference has no visible lower body (no ankles/feet), ref hip positions are re-estimated below the neck using a torso-to-shoulder ratio so the first frame aligns better with the reference image |
-| 15 | No canvas re-fit in partial-body | `fit_pose_sequence_to_canvas` is **not** applied in partial-body mode so that poses stay in reference space and alignment is preserved |
-| 16 | Render at ref resolution (partial-body) | The retargeted pose video is rendered at the **reference image resolution** so skeleton size and aspect ratio match `ref_pose.jpg` when compared side by side |
+| 10 | Motion attenuation | In partial-body mode, global sway/drift is scaled down inversely to the coordinate-transform zoom so close-up skeletons stay on canvas |
+| 11 | Auto max_bone_ratio | Automatic bone-length ratio limit computed from skeleton scale difference; set `--max_bone_ratio 0` (default) |
+| 12 | Partial-body coord transform | Edit→orig transform is fitted using **upper-body joints** by default; when the ref shows **upper legs** (hips or knees visible in the visible region), hip and knee keypoints are **included** so they are not excluded or misaligned. Otherwise upper-body only avoids biased-high ref hips |
+| 13 | Ref-hip correction (single ref) | When the reference has no visible lower body (no ankles/feet), ref hip positions are re-estimated below the neck using a torso-to-shoulder ratio so the first frame aligns better with the reference image |
+| 14 | No canvas re-fit in partial-body | `fit_pose_sequence_to_canvas` is **not** applied in partial-body mode so that poses stay in reference space and alignment is preserved |
+| 15 | Render at ref resolution (partial-body) | The retargeted pose video is rendered at the **reference image resolution** so skeleton size and aspect ratio match `ref_pose.jpg` when compared side by side |
+| 16 | Position correction (final step) | **Applied last** after all other retargeting steps so nothing overwrites it. The **first frame’s** neck and hip keypoints (and knees in partial-body) are aligned to ref_name; the computed offset is applied to **all** frames so the retargeted pose sits in the correct position on the canvas. |
 
 ```bash
 bash run_dwpose_alignment_improved.sh
@@ -241,7 +241,7 @@ New optional arguments (vs original):
 13. **Partial-body only:** Mask hand and body keypoints to full-body validity; **refine hand** when hand–wrist–arm connections invalid (full-body relative + ref/edit ratio).  
 14. **Ground-plane constraints** (if lower body visible): detect foot contacts, pin feet to median ground plane.  
 15. **Temporal smoothing** (optional, `--temporal_smoothing`): One Euro Filter on all keypoints.  
-16. **Position correction (final step, Improvement 10):** Align first frame’s neck/hip (and knees in partial-body) to ref_name; apply that offset to **all** frames. This is the last refinement so no later step overwrites canvas alignment.  
+16. **Position correction (final step, Improvement 16):** Align first frame’s neck/hip (and knees in partial-body) to ref_name; apply that offset to **all** frames. This is the last refinement so no later step overwrites canvas alignment.  
 17. **Render and save:** Pose skeletons (ref, video_char, edited_ref), frame images, pose_sequence.mp4; in partial-body also pose_sequence_edited_ref.mp4 at edited_ref resolution.
 
 **Partial-body mode** is useful when the reference image shows only part of the character (e.g., a close-up face shot) while the driving video shows the full body. Provide an edited full-body version of the reference image via `--edited_ref_name`:
