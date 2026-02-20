@@ -29,10 +29,10 @@
 
 # --- Example 3: driven video + pose video (two outputs, same crop) ---
 python video_crop_align.py \
-  --ref_name data/images/complex_motions/video_char/hiphop69_char_half_front.png   \
+  --ref_name data/images/complex_motions/ref/3_ref_front.png  \
   --source_video_paths data/videos/complex_motions/hiphop69.mp4 \
-  --output_video data/cropped_videos/crop_align_hiphop69_half_front_hiphop69/cropped_video.mp4 \
+  --output_video data/cropped_videos/crop_align_3_front_hiphop69/cropped_video.mp4 \
   --source_pose_video_paths /picassox/intelligent-cpfs/pixocial/bingyin.zhao/code/foundation_models/LTX-2/assets/poses/vace/train_Hiphop69_720P_src_video-pose_body_face_hand.mp4 \
-  --output_pose_video data/cropped_videos/crop_align_hiphop69_half_front_hiphop69/cropped_pose_video.mp4 \
+  --output_pose_video data/cropped_videos/crop_align_3_front_hiphop69/cropped_pose_video.mp4 \
   --sam_checkpoint checkpoints/sam_vit_h_4b8939.pth \
   --visibility_margin 0.05 \

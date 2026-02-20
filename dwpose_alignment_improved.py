@@ -638,7 +638,7 @@ def apply_face_ref_anchor_partial_body(retargeted_seq, orig_ref_cand,
         curr_extent = _face_extent(pose['faces'], nose)
         if curr_extent is None or curr_extent < 1e-6:
             continue
-        scale = np.clip(ref_extent / curr_extent, 0.5, 2.0)
+        scale = np.clip(ref_extent / curr_extent, 1.0, 2.0)  # only scale up, never shrink
         for fi in range(pose['faces'].shape[0]):
             for k in range(pose['faces'].shape[1]):
                 if is_valid_kp(pose['faces'][fi, k]):
@@ -1924,13 +1924,15 @@ def retarget_face(drv_faces, drv_cand, ret_cand, ref_cand, ref_faces=None,
         for k in range(ret_faces.shape[1]):
             if is_valid_kp(ret_faces[fi, k]):
                 ret_faces[fi, k] = ret_faces[fi, k] + delta
-    # (2) Reference face size: scale around ret_nose to match ref extent
+    # (2) Reference face size: scale around ret_nose to match ref extent, but never shrink
+    # (shrinking causes compacted/shrunken face when ref extent is smaller than current)
     if ref_faces is not None and ref_faces.shape == ret_faces.shape and is_valid_kp(ref_cand[nose_idx]):
         ref_nose = ref_cand[nose_idx]
         ref_extent = _face_extent(ref_faces, ref_nose)
         curr_extent = _face_extent(ret_faces, ret_nose)
         if ref_extent is not None and curr_extent is not None and curr_extent > 1e-6:
-            scale = np.clip(ref_extent / curr_extent, 0.5, 2.0)
+            scale = ref_extent / curr_extent
+            scale = np.clip(scale, 1.0, 2.0)  # only scale up to match ref, never shrink
             for fi in range(ret_faces.shape[0]):
                 for k in range(ret_faces.shape[1]):
                     if is_valid_kp(ret_faces[fi, k]):

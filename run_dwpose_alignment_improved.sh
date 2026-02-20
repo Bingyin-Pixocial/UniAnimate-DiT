@@ -26,10 +26,10 @@
 
 
 python dwpose_alignment_improved.py \
-  --ref_name data/images/complex_motions/ref/100_ref.jpg \
+  --ref_name data/images/complex_motions/ref/3_ref_edited.jpg \
   --video_char_image data/images/complex_motions/video_char/hiphop69_char.png \
   --source_video_paths data/videos/complex_motions/hiphop69.mp4 \
-  --saved_pose_dir data/saved_pose/dwpose_improved_100_hiphop69 \
+  --saved_pose_dir data/saved_pose/dwpose_improved_3_edited_hiphop69 \
   --fps 16 \
   --max_bone_ratio 0 \
   --draw_face \
