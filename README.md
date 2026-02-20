@@ -198,7 +198,6 @@ bash run_xpose_alignment.sh
 | 13 | Partial-body coord transform | Edit→orig transform is fitted using **upper-body joints** by default; when the ref shows **upper legs** (hips or knees visible in the visible region), hip and knee keypoints are **included** so they are not excluded or misaligned. Otherwise upper-body only avoids biased-high ref hips |
 | 14 | Ref-hip correction (single ref) | When the reference has no visible lower body (no ankles/feet), ref hip positions are re-estimated below the neck using a torso-to-shoulder ratio so the first frame aligns better with the reference image |
 | 15 | Full-sequence alignment (partial-body) | After the coord transform, **position correction** is applied so the **entire** retargeted pose sequence (all frames) is aligned to the reference image with the same offset, not only the first frame |
-| 16 | First frame = ref pose (partial-body) | Frame 0 is overwritten with the **reference pose** so the first frame exactly matches `ref_pose.jpg` in skeleton size and keypoint positions |
 | 17 | No canvas re-fit in partial-body | `fit_pose_sequence_to_canvas` is **not** applied in partial-body mode so that poses stay in reference space and alignment is preserved |
 | 18 | Render at ref resolution (partial-body) | The retargeted pose video is rendered at the **reference image resolution** so skeleton size and aspect ratio match `ref_pose.jpg` when compared side by side |
 

@@ -646,27 +646,6 @@ def apply_face_ref_anchor_partial_body(retargeted_seq, orig_ref_cand,
                     pose['faces'][fi, k] = nose + scale * offset
 
 
-def _inject_ref_pose_as_first_frame(retargeted_seq, pose_orig_ref):
-    """Overwrite the first frame with the reference pose so it matches ref_pose.jpg.
-
-    Ensures skeleton size and keypoint positions of frame 0 exactly match the
-    reference image. Modifies retargeted_seq[0] in place.
-    """
-    if len(retargeted_seq) == 0:
-        return
-    ref_bodies = pose_orig_ref['bodies']
-    ref_cand = ref_bodies['candidate']
-    ref_subset = ref_bodies.get('subset')
-    first = retargeted_seq[0]
-    first['bodies']['candidate'] = ref_cand.copy()
-    if ref_subset is not None and first['bodies']['subset'].shape == ref_subset.shape:
-        first['bodies']['subset'] = ref_subset.copy()
-    if (first['hands'].shape == pose_orig_ref['hands'].shape):
-        first['hands'] = pose_orig_ref['hands'].copy()
-    if (first['faces'].shape == pose_orig_ref['faces'].shape):
-        first['faces'] = pose_orig_ref['faces'].copy()
-
-
 def _joints_inside_region(pose, visible_region):
     """Return set of body joint indices whose keypoints lie inside visible_region."""
     if visible_region is None:
@@ -2504,10 +2483,6 @@ def mp_main(args):
         # Align entire sequence to reference: same offset so all frames match ref
         logger.info("Aligning entire pose sequence to reference ...")
         retargeted = apply_position_correction(retargeted, orig_ref_cand)
-
-        # First frame exactly matches ref_pose.jpg (skeleton size and keypoint positions)
-        _inject_ref_pose_as_first_frame(retargeted, pose_orig_ref)
-        logger.info("First frame set to reference pose.")
 
         # Stage 2 face: use ref_name face keypoints, re-anchor at each frame's nose (no scaling)
         apply_face_ref_anchor_partial_body(
