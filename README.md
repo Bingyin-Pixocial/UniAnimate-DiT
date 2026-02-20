@@ -241,7 +241,7 @@ New optional arguments (vs original):
 13. **Partial-body only:** Mask hand and body keypoints to full-body validity; **refine hand** when hand–wrist–arm connections invalid (full-body relative + ref/edit ratio).  
 14. **Ground-plane constraints** (if lower body visible): detect foot contacts, pin feet to median ground plane.  
 15. **Temporal smoothing** (optional, `--temporal_smoothing`): One Euro Filter on all keypoints.  
-16. **Position correction (final step):** Align first frame’s neck/hip (and knees in partial-body) to ref_name; apply that offset to **all** frames. This is the last refinement so no later step overwrites canvas alignment.  
+16. **Position correction (final step, Improvement 10):** Align first frame’s neck/hip (and knees in partial-body) to ref_name; apply that offset to **all** frames. This is the last refinement so no later step overwrites canvas alignment.  
 17. **Render and save:** Pose skeletons (ref, video_char, edited_ref), frame images, pose_sequence.mp4; in partial-body also pose_sequence_edited_ref.mp4 at edited_ref resolution.
 
 **Partial-body mode** is useful when the reference image shows only part of the character (e.g., a close-up face shot) while the driving video shows the full body. Provide an edited full-body version of the reference image via `--edited_ref_name`:
