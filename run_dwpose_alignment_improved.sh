@@ -2,25 +2,37 @@
 # Usage: bash run_dwpose_alignment_improved.sh
 #
 # Optional flags:
-#   --fps               Video FPS for smoothing (default: 30)
-#   --smooth_min_cutoff One-Euro min cutoff (default: 1.7)
-#   --smooth_beta       One-Euro beta (default: 0.3)
+#   --fps               Output video FPS (default: 30)
+#   --temporal_smoothing Enable One Euro Filter smoothing (default: off)
+#   --smooth_min_cutoff One-Euro min cutoff (only if --temporal_smoothing)
+#   --smooth_beta       One-Euro beta (only if --temporal_smoothing)
 #   --max_bone_ratio    Max bone-length ratio clamp (default: 0 = auto)
 #   --video_only        Only keep video, delete frame images
 #   --edited_ref_name   Full-body edited ref image (enables partial-body mode)
 #   --sam_checkpoint    Path to SAM model for visibility detection (optional)
 #   --visibility_margin Margin around visible region (default: 0.05)
+#   --draw_face         Draw face keypoints on output (requires wholebody model)
 
-# --- Example 1: standard full-body mode ---
+# --- Example 1: standard full-body mode (no temporal smoothing by default) ---
 # python dwpose_alignment_improved.py \
-#   --ref_name data/images/complex_motions/ref/3_ref.jpg \
-#   --video_char_image data/images/complex_motions/video_char/1_char.png \
-#   --source_video_paths data/videos/complex_motions/1.mp4 \
-#   --saved_pose_dir data/saved_pose/dwpose_improved_3_1_responsiveness \
+#   --ref_name data/images/complex_motions/ref/3_ref_front.png \
+#   --video_char_image data/images/complex_motions/video_char/hiphop69_char_half_front.png \
+#   --source_video_paths data/videos/complex_motions/hiphop69_half.mp4 \
+#   --saved_pose_dir data/saved_pose/dwpose_improved_3_front_hiphop69_half_face \
 #   --fps 16 \
-#   --smooth_min_cutoff 2 \
-#   --smooth_beta 0.5 \
 #   --max_bone_ratio 0 \
+#   --draw_face \
+#   --video_only
+
+
+# python dwpose_alignment_improved.py \
+#   --ref_name data/images/complex_motions/ref/3_ref_front.png \
+#   --video_char_image data/images/complex_motions/video_char/hiphop69_char_half_front.png \
+#   --source_video_paths data/videos/complex_motions/hiphop69_half.mp4 \
+#   --saved_pose_dir data/saved_pose/dwpose_improved_3_front_hiphop69_half_face \
+#   --fps 16 \
+#   --max_bone_ratio 0 \
+#   --draw_face \
 #   --video_only
 
 # --- Example 2: partial-body mode (uncomment to use) ---
@@ -28,34 +40,29 @@
 # provide an edited full-body version via --edited_ref_name.
 #
 python dwpose_alignment_improved.py \
-  --ref_name data/images/complex_motions/ref/101_ref.jpg \
-  --edited_ref_name data/images/complex_motions/ref/101_ref_edited.png \
-  --video_char_image data/images/complex_motions/video_char/39_char.png \
-  --source_video_paths data/videos/complex_motions/39.mp4 \
-  --saved_pose_dir data/saved_pose/dwpose_improved_101_39_responsiveness \
-  --fps 30 \
-  --smooth_min_cutoff 2 \
-  --smooth_beta 0.5 \
+  --ref_name data/images/complex_motions/ref/3_ref_front.png \
+  --edited_ref_name data/images/complex_motions/ref/3_ref_edited.png \
+  --video_char_image data/images/complex_motions/video_char/hiphop69_char.png \
+  --source_video_paths data/videos/complex_motions/hiphop69.mp4 \
+  --saved_pose_dir data/saved_pose/dwpose_improved_3_front_hiphop69_face \
   --max_bone_ratio 0 \
   --visibility_margin 0.05 \
+  --draw_face \
   --video_only
 
 
-
-  # --- Example 3: partial-body mode with SAM mask (uncomment to use) ---
+# --- Example 3: partial-body mode with SAM mask (uncomment to use) ---
 # When the ref image shows only part of the body (e.g., face/upper body),
 # provide an edited full-body version via --edited_ref_name.
 #
-# python dwpose_alignment_improved.py \
-#   --ref_name data/images/complex_motions/ref/3_ref.jpg \
-#   --edited_ref_name data/images/complex_motions/ref/3_ref_edited.png \
-#   --video_char_image data/images/complex_motions/video_char/39_char.png \
-#   --source_video_paths data/videos/complex_motions/39.mp4 \
-#   --saved_pose_dir data/saved_pose/dwpose_improved_3_39_sam_mask \
-#   --sam_checkpoint /picassox/intelligent-cpfs/pixocial/bingyin.zhao/code/tools/UniAnimate-DiT/checkpoints/sam_vit_h_4b8939.pth \
-#   --fps 30 \
-#   --smooth_min_cutoff 2 \
-#   --smooth_beta 0.5 \
-#   --max_bone_ratio 0 \
-#   --visibility_margin 0.05 \
-#   --video_only
+python dwpose_alignment_improved.py \
+  --ref_name data/images/complex_motions/ref/3_ref_front.png \
+  --edited_ref_name data/images/complex_motions/ref/3_ref_edited.png \
+  --video_char_image data/images/complex_motions/video_char/hiphop69_char.png \
+  --source_video_paths data/videos/complex_motions/hiphop69.mp4 \
+  --saved_pose_dir data/saved_pose/dwpose_improved_3_front_hiphop69_sam_mask_face \
+  --sam_checkpoint /picassox/intelligent-cpfs/pixocial/bingyin.zhao/code/tools/UniAnimate-DiT/checkpoints/sam_vit_h_4b8939.pth \
+  --max_bone_ratio 0 \
+  --visibility_margin 0.05 \
+  --draw_face \
+  --video_only

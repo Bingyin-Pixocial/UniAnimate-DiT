@@ -181,6 +181,20 @@ def draw_handpose(canvas, all_hand_peaks):
     return canvas
 
 
+def draw_hand_keypoints_only(canvas, all_hand_peaks):
+    """Draw hand keypoints as circles only, no connections (edges)."""
+    H, W, C = canvas.shape
+    for peaks in all_hand_peaks:
+        peaks = np.array(peaks)
+        for i, keypoint in enumerate(peaks):
+            x, y = keypoint
+            x = int(x * W)
+            y = int(y * H)
+            if x > eps and y > eps:
+                cv2.circle(canvas, (x, y), 4, (0, 0, 255), thickness=-1)
+    return canvas
+
+
 def draw_facepose(canvas, all_lmks):
     H, W, C = canvas.shape
     for lmks in all_lmks:

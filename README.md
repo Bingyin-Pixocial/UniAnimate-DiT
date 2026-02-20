@@ -185,29 +185,51 @@ bash run_xpose_alignment.sh
 | 1 | Angle-based retargeting | Preserves driving motion's joint angles while applying reference bone lengths (replaces translation-based approach) |
 | 2 | Temporal smoothing | One Euro Filter on all keypoints to reduce jitter while preserving fast motions |
 | 3 | Occlusion handling | Missing keypoints are filled via linear temporal interpolation |
-| 4 | Relative hand/face alignment | Hands re-anchored at retargeted wrists, face re-anchored at retargeted nose, both scaled proportionally |
+| 3.5 | No inference on source (default) | By default the **source (driving) pose is not filled or interpolated**: only keypoints valid in the source video are retargeted. Missing elbow/wrist/arm in the source stay missing in the output; hands use neck-based re-anchoring when arm chain is invalid. Use **`--infer_source`** to enable the previous behavior (fill missing body connections in full-body mode + temporal interpolation on source). |
+| 4 | Relative hand/face alignment | **Full-body hands:** Wrist-based only when shoulder–elbow–wrist valid and hand attached to wrist; else neck-based. **Full-body face:** Nose-delta. **Partial-body:** When connections invalid, apply full-body relative hand position. |
 | 5 | Ground-plane constraints | Feet pinned to a median ground plane during detected contact frames |
-| 6 | Depth-adaptive scaling | Per-frame scale normalisation based on shoulder width to handle camera depth changes |
+| 6 | Depth-adaptive scaling | Per-frame scale normalisation based on shoulder width to handle camera depth changes; hands and face are scaled with the body so full-body retargeting uses a single coordinate system and hand/wrist positions stay correct |
 | 7 | Two-anchor alignment | Hip-center-driven root position for natural lateral sway and vertical bounce |
 | 8 | Physical plausibility | Joint angle limits (elbows/knees) and canvas boundary clamping |
 | 9 | Partial-body support | When the reference image shows only part of the body (e.g., face/upper body), uses an edited full-body reference for retargeting, then maps poses back to the visible region via coordinate transform + visibility masking |
 | 10 | Position correction | Automatic anchor-based global offset so the retargeted skeleton matches the reference character's position regardless of where the driving video character is |
 | 11 | Motion attenuation | In partial-body mode, global sway/drift is scaled down inversely to the coordinate-transform zoom so close-up skeletons stay on canvas |
 | 12 | Auto max_bone_ratio | Automatic bone-length ratio limit computed from skeleton scale difference; set `--max_bone_ratio 0` (default) |
+| 13 | Partial-body coord transform | Edit→orig transform is fitted using **upper-body joints** by default; when the ref shows **upper legs** (hips or knees visible in the visible region), hip and knee keypoints are **included** so they are not excluded or misaligned. Otherwise upper-body only avoids biased-high ref hips |
+| 14 | Ref-hip correction (single ref) | When the reference has no visible lower body (no ankles/feet), ref hip positions are re-estimated below the neck using a torso-to-shoulder ratio so the first frame aligns better with the reference image |
+| 15 | Full-sequence alignment (partial-body) | After the coord transform, **position correction** is applied so the **entire** retargeted pose sequence (all frames) is aligned to the reference image with the same offset, not only the first frame |
+| 16 | First frame = ref pose (partial-body) | Frame 0 is overwritten with the **reference pose** so the first frame exactly matches `ref_pose.jpg` in skeleton size and keypoint positions |
+| 17 | No canvas re-fit in partial-body | `fit_pose_sequence_to_canvas` is **not** applied in partial-body mode so that poses stay in reference space and alignment is preserved |
+| 18 | Render at ref resolution (partial-body) | The retargeted pose video is rendered at the **reference image resolution** so skeleton size and aspect ratio match `ref_pose.jpg` when compared side by side |
 
 ```bash
 bash run_dwpose_alignment_improved.sh
 ```
 
+**Output (default):** In `--saved_pose_dir`, the script saves the retargeted pose video (`pose_sequence.mp4`) and, by default, pose skeleton images for the inputs: `ref_pose.jpg` (skeleton on ref image), `video_char_pose.jpg` (skeleton on video character image), and `edited_ref_pose.jpg` (skeleton on edited ref image, only in partial-body mode). Frame images `0000.jpg`, `0001.jpg`, … are also written unless `--video_only` is set. In **partial-body mode**, the full-body retargeted pose sequence (video_char → edited_ref_name) is also saved as `pose_sequence_edited_ref.mp4` at edited_ref image resolution.
+
 New optional arguments (vs original):
-- `--fps` &mdash; video FPS for temporal smoothing (default: 30)
-- `--smooth_min_cutoff` &mdash; One-Euro min cutoff; higher = less smoothing (default: 1.7)
-- `--smooth_beta` &mdash; One-Euro beta; higher = less lag on fast motion (default: 0.3)
+- `--source_video_paths` &mdash; (required) path to source driving video (.mp4) or directory of videos (DWPose runs on each frame).
+- `--fps` &mdash; output video FPS; **0** = auto-detect from first source video (default); positive value overrides
+- `--temporal_smoothing` &mdash; enable One Euro Filter on retargeted poses (default: off)
+- `--smooth_min_cutoff` &mdash; One-Euro min cutoff when `--temporal_smoothing` is set (default: 1.7)
+- `--smooth_beta` &mdash; One-Euro beta when `--temporal_smoothing` is set (default: 0.3)
 - `--max_bone_ratio` &mdash; maximum allowed bone-length ratio between reference and driving characters; set to **0** for automatic detection based on skeleton scale difference (recommended); a positive value is used as-is (default: 0 = auto)
-- `--video_only` &mdash; only keep the output video; individual frame images are deleted after encoding (available in all three pose alignment scripts)
+- `--video_only` &mdash; only keep the output video and the ref/video_char/edited_ref pose skeleton images; individual frame images (0000.jpg, …) are deleted after encoding (available in all three pose alignment scripts)
 - `--edited_ref_name` &mdash; path to a full-body edited version of the reference image; enables **partial-body mode** where only the visible region of the original reference is rendered
-- `--sam_checkpoint` &mdash; path to a SAM checkpoint (e.g., `sam_vit_b_01ec64.pth`) for precise person-mask visibility detection; requires `pip install segment-anything`; falls back to keypoint-based visibility if not provided
+- `--sam_checkpoint` &mdash; path to a SAM checkpoint (e.g., `sam_vit_b_01ec64.pth`) for precise person-mask visibility detection; requires `pip install segment-anything`; falls back to keypoint-based visibility if not provided. When using SAM, a refinement step aligns each frame’s visible keypoints to the reference image For the SAM path, keypoints visible in ref_name are used as guidance: keypoints not in that set are eliminated from the retargeted poses (before coord transform and again after motion attenuation), so the output only shows what the reference image shows.
 - `--visibility_margin` &mdash; margin (normalised) added around the detected visible region in partial-body mode (default: 0.05)
+- `--infer_source` &mdash; if set, fill missing body connections (full-body only) and interpolate missing keypoints on the source pose. **Default: off** for faithful retargeting (only keypoints valid in the source video are retargeted; no inferred elbow/wrist/hand)
+
+**Partial-body algorithm** (when `--edited_ref_name` is set):
+
+1. **Full-body retargeting** — Run the full-body retargeting using `edited_ref_name` and `video_char_image`. The result is a pose sequence in edited-ref (full-body) space.
+2. **Mapping to ref_name** — Use SAM or keypoint-based visibility to get the visible region. Compute the **ratio and position difference** between `ref_name` and `edited_ref_name` (linear fit on common keypoints → `sx`, `sy`, `tx`, `ty`). Map **all** full-body retargeted frames from edited-ref space to ref_name space; then apply position correction so the whole sequence aligns with the reference image.
+3. **Per-frame visibility (ref + kinematic + view-aware)** — Use the ref_name pose as **guidance**. For each frame: **(a)** *Core:* keypoints in the ref’s visible set that lie inside the visible region. **(b)** *Kinematic propagation:* add adjacent joints in the ref’s set to keep limbs connected. **(c)** *View-aware:* infer front/back/side from relative positions of left vs right keypoints; do **not** infer keypoints or connections that are blocked by the view. **(d)** *Wrist near head:* if a wrist is very close to the head (nose/neck), treat it as occluded and do not show it (or the hand), so no hand–head connection is drawn. **(e)** *Hand–wrist connectivity:* wrist is resolved from hand or arm so connections are plausible. If the body wrist is missing or the wrist-to-hand extent is too long, the wrist is inferred either from hand keypoints (hand base or centroid) or from the arm (elbow + forearm direction); when arm-inferred wrist is used and is close to the hand, the hand is shifted so it attaches to the wrist. The body wrist is always updated so both elbow–wrist and wrist–hand are drawn; valid hand keypoints are never excluded.
+4. **Keypoints to draw** — Body and hand keypoints are masked to the corresponding full-body pose frame so only keypoints that existed in the full-body pose are kept (no inferred keypoints/connections that are not in the full-body).
+5. **Kinematic inference** — Wrist/hand connectivity is inferred (resolve_wrist_and_hand) so arms and hands connect plausibly.
+6. **Refine hand only when connections invalid** — For each hand we evaluate whether hand–wrist–arm connections are valid (wrist valid, elbow valid, hand base within range of wrist). **If valid**: do not redraw; keep kinematic result. **If invalid** (hand detached): recompute hand position from full-body relative (hand–neck offset in ref space), set wrist to hand base and mark visible so the arm connects (no size rescale).
+7. **Rendering** — All keypoints are drawn together (body, hand–wrist, wrist–arm, and hand internal connections as usual).
 
 **Partial-body mode** is useful when the reference image shows only part of the character (e.g., a close-up face shot) while the driving video shows the full body. Provide an edited full-body version of the reference image via `--edited_ref_name`:
 
@@ -222,7 +244,25 @@ python dwpose_alignment_improved.py \
   --visibility_margin 0.05
 ```
 
+#### Video crop (reference-aligned)
 
+`video_crop_align.py` crops a full-body video to match the partial-body framing of a reference image: given a reference image (e.g. face/upper body) and a full-body video of the same person, it computes the crop area once from the first frame and the reference, then applies that same crop to all frames for temporal consistency and to avoid flickering. It reuses DWPose and optional SAM from the improved alignment pipeline.
+
+```bash
+bash run_video_crop_align.sh
+```
+
+Arguments:
+- `--ref_name` &mdash; reference image path (partial body)
+- `--source_video_paths` &mdash; input video file (`.mp4`/`.avi`) or directory of videos
+- `--output_video` &mdash; output cropped video path
+- `--source_pose_video_paths` &mdash; optional pose video (same length as driven video); the same crop is applied to produce a second output
+- `--output_pose_video` &mdash; output path for cropped pose video (required when `--source_pose_video_paths` is set)
+- `--output_size` &mdash; optional output resolution as `WxH` (default: same as driven video)
+- `--fps` &mdash; output FPS (default: auto-detect from driven video; fallback 30)
+- `--sam_checkpoint` &mdash; path to SAM checkpoint for visibility region (optional)
+- `--visibility_margin` &mdash; margin around visible region (default: 0.05)
+- `--save_crops` &mdash; save the crop box to a JSON file next to the output video
 
 ### (4) Pose alignment 
 
