@@ -197,9 +197,8 @@ bash run_xpose_alignment.sh
 | 12 | Auto max_bone_ratio | Automatic bone-length ratio limit computed from skeleton scale difference; set `--max_bone_ratio 0` (default) |
 | 13 | Partial-body coord transform | Edit→orig transform is fitted using **upper-body joints** by default; when the ref shows **upper legs** (hips or knees visible in the visible region), hip and knee keypoints are **included** so they are not excluded or misaligned. Otherwise upper-body only avoids biased-high ref hips |
 | 14 | Ref-hip correction (single ref) | When the reference has no visible lower body (no ankles/feet), ref hip positions are re-estimated below the neck using a torso-to-shoulder ratio so the first frame aligns better with the reference image |
-| 15 | Full-sequence alignment (partial-body) | After the coord transform, **position correction** is applied so the **entire** retargeted pose sequence (all frames) is aligned to the reference image with the same offset, not only the first frame |
-| 17 | No canvas re-fit in partial-body | `fit_pose_sequence_to_canvas` is **not** applied in partial-body mode so that poses stay in reference space and alignment is preserved |
-| 18 | Render at ref resolution (partial-body) | The retargeted pose video is rendered at the **reference image resolution** so skeleton size and aspect ratio match `ref_pose.jpg` when compared side by side |
+| 15 | No canvas re-fit in partial-body | `fit_pose_sequence_to_canvas` is **not** applied in partial-body mode so that poses stay in reference space and alignment is preserved |
+| 16 | Render at ref resolution (partial-body) | The retargeted pose video is rendered at the **reference image resolution** so skeleton size and aspect ratio match `ref_pose.jpg` when compared side by side |
 
 ```bash
 bash run_dwpose_alignment_improved.sh
@@ -220,15 +219,30 @@ New optional arguments (vs original):
 - `--visibility_margin` &mdash; margin (normalised) added around the detected visible region in partial-body mode (default: 0.05)
 - `--infer_source` &mdash; if set, fill missing body connections (full-body only) and interpolate missing keypoints on the source pose. **Default: off** for faithful retargeting (only keypoints valid in the source video are retargeted; no inferred elbow/wrist/hand)
 
-**Partial-body algorithm** (when `--edited_ref_name` is set):
+**Processing pipeline (order of steps, matches implementation):**
 
-1. **Stage 1 (full-body retargeting)** — Run the full-body retargeting using **video_char** (driving video) vs **edited_ref_name** as reference. **Face:** Use **edited_ref_name** face keypoints; re-anchor at retargeted nose (no scaling—face size from reference). The result is a pose sequence in edited-ref (full-body) space.
-2. **Stage 2 (mapping to ref_name)** — Use SAM or keypoint-based visibility to get the visible region. Compute the **ratio and position difference** between `ref_name` and `edited_ref_name` (linear fit on common keypoints → `sx`, `sy`, `tx`, `ty`). Map **all** full-body retargeted frames from edited-ref space to ref_name space. **Face:** Use **ref_name** face keypoints; re-anchor at each frame's nose (no scaling—face size from ref_name). **Position correction** is applied as the **final refinement step** (after visibility, hand refinement, ground constraints, temporal smoothing) so the first frame’s neck/hip/knee align with ref_name and that offset is applied to the whole sequence.
-3. **Per-frame visibility (ref + kinematic + view-aware)** — Use the ref_name pose as **guidance**. For each frame: **(a)** *Core:* keypoints in the ref’s visible set that lie inside the visible region. **(b)** *Kinematic propagation:* add adjacent joints in the ref’s set to keep limbs connected. **(c)** *View-aware:* infer front/back/side from relative positions of left vs right keypoints; do **not** infer keypoints or connections that are blocked by the view. **(d)** *Wrist near head:* if a wrist is very close to the head (nose/neck), treat it as occluded and do not show it (or the hand), so no hand–head connection is drawn. **(e)** *Hand–wrist connectivity:* wrist is resolved from hand or arm so connections are plausible. If the body wrist is missing or the wrist-to-hand extent is too long, the wrist is inferred either from hand keypoints (hand base or centroid) or from the arm (elbow + forearm direction); when arm-inferred wrist is used and is close to the hand, the hand is shifted so it attaches to the wrist. The body wrist is always updated so both elbow–wrist and wrist–hand are drawn; valid hand keypoints are never excluded.
-4. **Keypoints to draw** — Body and hand keypoints are masked to the corresponding full-body pose frame so only keypoints that existed in the full-body pose are kept (no inferred keypoints/connections that are not in the full-body).
-5. **Kinematic inference** — Wrist/hand connectivity is inferred (resolve_wrist_and_hand) so arms and hands connect plausibly.
-6. **Refine hand only when connections invalid** — For each hand we evaluate whether hand–wrist–arm connections are valid (wrist valid, elbow valid, hand base within range of wrist). **If valid**: do not redraw; keep kinematic result. **If invalid** (hand detached): recompute hand position from full-body relative (hand–neck offset in ref space), set wrist to hand base and mark visible so the arm connects (no size rescale).
-7. **Rendering** — All keypoints are drawn together (body, hand–wrist, wrist–arm, and hand internal connections as usual).
+**Steps 1–5 (all modes):**  
+1. Extract poses from driving video (DWPose per frame).  
+2. Detect poses for ref_name and video_char_image; if partial-body: load edited_ref_name, compute visible region (SAM or keypoint-based), visible joints, and coord transform (edited_ref → ref_name).  
+3. Compute reference bone lengths from ref_cand (edited_ref in partial-body, ref_name in full-body).  
+4. Optionally infer on source: if `--infer_source`, fill missing body connections (full-body only) and interpolate missing keypoints; otherwise no inference (faithful retargeting).  
+5. **Full-body retargeting (Stage 1 in partial-body):** Per-frame angle-based body retargeting (driving → ref_cand), validate_pose, sanity check, retarget_hands, retarget_face. Face uses reference face keypoints (edited_ref in partial-body, ref_name in full-body) and nose delta + ref face size.
+
+**Partial-body only (after Step 5):**  
+6. Capture hand/body validity masks from retargeted (before coord transform).  
+7. **Coord transform:** Map all frames from edited_ref space to ref_name space (sx, sy, tx, ty).  
+8. **Stage 2 face:** Apply ref_name face size to transformed face (re-anchor at each frame’s nose; no scaling).  
+9. **Motion attenuation** (if coord scale > 1.5): reduce global motion magnitude.  
+10. Save full-body-in-ref-space copy for hand refinement.  
+11. **Per-frame visibility:** Mask keypoints to ref’s visible joints and visible region.
+
+**All modes (after partial-body block or directly after Step 5 in full-body):**  
+12. **Resolve wrist/hand:** Kinematic inference (wrist from hand or arm) for all poses.  
+13. **Partial-body only:** Mask hand and body keypoints to full-body validity; **refine hand** when hand–wrist–arm connections invalid (full-body relative + ref/edit ratio).  
+14. **Ground-plane constraints** (if lower body visible): detect foot contacts, pin feet to median ground plane.  
+15. **Temporal smoothing** (optional, `--temporal_smoothing`): One Euro Filter on all keypoints.  
+16. **Position correction (final step):** Align first frame’s neck/hip (and knees in partial-body) to ref_name; apply that offset to **all** frames. This is the last refinement so no later step overwrites canvas alignment.  
+17. **Render and save:** Pose skeletons (ref, video_char, edited_ref), frame images, pose_sequence.mp4; in partial-body also pose_sequence_edited_ref.mp4 at edited_ref resolution.
 
 **Partial-body mode** is useful when the reference image shows only part of the character (e.g., a close-up face shot) while the driving video shows the full body. Provide an edited full-body version of the reference image via `--edited_ref_name`:
 
