@@ -1235,39 +1235,63 @@ def attenuate_motion(retargeted, sx, sy, ref_anchor):
 # =============================================================================
 # Position correction (Issue 2: character position mismatch)
 # =============================================================================
-def apply_position_correction(retargeted_seq, target_ref_cand):
-    """Shift all frames so the first frame's anchor matches the reference.
+# Anchor joints for first-frame alignment with ref_name (offset applied to all frames)
+# Full-body: neck + both hips so hip/neck align with ref on canvas
+FULL_BODY_ANCHOR_JOINTS = (1, 8, 11)   # neck, Rhip, Lhip
+# Partial-body stage 2: add knees for more stable anchor
+PARTIAL_BODY_ANCHOR_JOINTS = (1, 8, 11, 9, 12)  # neck, Rhip, Lhip, Rknee, Lknee
 
-    Uses neck (joint 1) as the primary anchor; falls back to hip center
-    if neck is not detected in the reference.
+
+def apply_position_correction(retargeted_seq, target_ref_cand,
+                              anchor_joint_indices=None):
+    """Shift all frames so the first frame aligns with the reference.
+
+    If anchor_joint_indices is given (e.g. for partial-body stage 2), use those
+    joints (neck, hip, knee) to compute the average offset so the first frame's
+    positions match ref_name; apply that offset to the whole sequence.
+    Otherwise use neck as primary anchor, or hip center if neck missing.
     """
     if len(retargeted_seq) == 0:
         return retargeted_seq
 
-    # Determine anchor joint from reference
-    if is_valid_kp(target_ref_cand[1]):
-        ref_anchor = target_ref_cand[1].copy()
-        anchor_idx = 1
-    elif (is_valid_kp(target_ref_cand[8])
-          and is_valid_kp(target_ref_cand[11])):
-        ref_anchor = 0.5 * (target_ref_cand[8] + target_ref_cand[11])
-        anchor_idx = None
-    else:
-        return retargeted_seq
-
-    # Compute anchor from first retargeted frame
     first_cand = retargeted_seq[0]['bodies']['candidate']
-    if anchor_idx is not None:
-        if not is_valid_kp(first_cand[anchor_idx]):
-            return retargeted_seq
-        ret_anchor = first_cand[anchor_idx].copy()
-    else:
-        if (not is_valid_kp(first_cand[8])
-                or not is_valid_kp(first_cand[11])):
-            return retargeted_seq
-        ret_anchor = 0.5 * (first_cand[8] + first_cand[11])
 
-    offset = ref_anchor - ret_anchor
+    if anchor_joint_indices is not None:
+        # Use multiple anchor joints (e.g. neck, hip): average offset over all valid pairs
+        offsets = []
+        for j in anchor_joint_indices:
+            if (j < first_cand.shape[0] and j < target_ref_cand.shape[0]
+                    and is_valid_kp(first_cand[j])
+                    and is_valid_kp(target_ref_cand[j])):
+                offsets.append(target_ref_cand[j] - first_cand[j])
+        if offsets:
+            offset = np.mean(offsets, axis=0)
+        else:
+            # Fallback to single anchor (neck or hip center) if no multi-joint pairs valid
+            anchor_joint_indices = None
+    if anchor_joint_indices is None:
+        # Original logic: single anchor (neck or hip center)
+        if is_valid_kp(target_ref_cand[1]):
+            ref_anchor = target_ref_cand[1].copy()
+            anchor_idx = 1
+        elif (is_valid_kp(target_ref_cand[8])
+              and is_valid_kp(target_ref_cand[11])):
+            ref_anchor = 0.5 * (target_ref_cand[8] + target_ref_cand[11])
+            anchor_idx = None
+        else:
+            return retargeted_seq
+
+        if anchor_idx is not None:
+            if not is_valid_kp(first_cand[anchor_idx]):
+                return retargeted_seq
+            ret_anchor = first_cand[anchor_idx].copy()
+        else:
+            if (not is_valid_kp(first_cand[8])
+                    or not is_valid_kp(first_cand[11])):
+                return retargeted_seq
+            ret_anchor = 0.5 * (first_cand[8] + first_cand[11])
+        offset = ref_anchor - ret_anchor
+
     if np.linalg.norm(offset) < 1e-6:
         return retargeted_seq
 
@@ -2480,10 +2504,6 @@ def mp_main(args):
         for pose in retargeted:
             apply_coord_transform_pose(pose, sx, sy, tx, ty)
 
-        # Align entire sequence to reference: same offset so all frames match ref
-        logger.info("Aligning entire pose sequence to reference ...")
-        retargeted = apply_position_correction(retargeted, orig_ref_cand)
-
         # Stage 2 face: use ref_name face keypoints, re-anchor at each frame's nose (no scaling)
         apply_face_ref_anchor_partial_body(
             retargeted, orig_ref_cand, pose_orig_ref, skip_frame_0=True)
@@ -2512,9 +2532,7 @@ def mp_main(args):
             apply_visibility_mask_per_frame(retargeted, visible_region,
                                             visible_joints)
     else:
-        # Standard mode: simple position correction
-        logger.info("Applying position correction ...")
-        retargeted = apply_position_correction(retargeted, orig_ref_cand)
+        pass  # Full-body: position correction done as final step below
 
     # Resolve wrist from hand or arm (kinematic inference) for all modes
     for pose in retargeted:
@@ -2566,6 +2584,14 @@ def mp_main(args):
         )
     else:
         logger.info("Temporal smoothing disabled (default).")
+
+    # Final step: position correction so first frame's neck/hip (and knees in partial-body) align with ref_name
+    # Applied last so no later operation overwrites the canvas alignment.
+    anchor_joints = (PARTIAL_BODY_ANCHOR_JOINTS if (partial_body_mode and coord_tf is not None)
+                     else FULL_BODY_ANCHOR_JOINTS)
+    logger.info("Final position correction (anchor: first-frame neck/hip = ref_name) ...")
+    retargeted = apply_position_correction(
+        retargeted, orig_ref_cand, anchor_joint_indices=anchor_joints)
 
     # Step 8: render and save (images + video)
     save_dir = args.saved_pose_dir
