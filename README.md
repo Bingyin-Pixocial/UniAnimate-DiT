@@ -204,7 +204,7 @@ bash run_xpose_alignment.sh
 bash run_dwpose_alignment_improved.sh
 ```
 
-**Output (default):** In `--saved_pose_dir`, the script saves the retargeted pose video (`pose_sequence.mp4`) and, by default, pose skeleton images for the inputs: `ref_pose.jpg` (skeleton on ref image), `video_char_pose.jpg` (skeleton on video character image), and `edited_ref_pose.jpg` (skeleton on edited ref image, only in partial-body mode). Frame images `0000.jpg`, `0001.jpg`, … are also written unless `--video_only` is set. In **partial-body mode**, the full-body retargeted pose sequence (video_char → edited_ref_name) is also saved as `pose_sequence_edited_ref.mp4` at edited_ref image resolution.
+**Output (default):** In `--saved_pose_dir`, the script saves the retargeted pose video (`pose_sequence.mp4`), the **source (driving) pose sequence** video (`pose_sequence_source.mp4`) at **source video resolution** (so character size matches the source video), and, by default, pose skeleton images for the inputs: `ref_pose.jpg` (skeleton on ref image), `video_char_pose.jpg` (skeleton on video character image), and `edited_ref_pose.jpg` (skeleton on edited ref image, only in partial-body mode). Frame images `0000.jpg`, `0001.jpg`, … are also written unless `--video_only` is set. In **partial-body mode**, the full-body retargeted pose sequence (video_char → edited_ref_name) is also saved as `pose_sequence_edited_ref.mp4` at edited_ref image resolution.
 
 New optional arguments (vs original):
 - `--source_video_paths` &mdash; (required) path to source driving video (.mp4) or directory of videos (DWPose runs on each frame).
@@ -242,7 +242,7 @@ New optional arguments (vs original):
 14. **Ground-plane constraints** (if lower body visible): detect foot contacts, pin feet to median ground plane.  
 15. **Temporal smoothing** (optional, `--temporal_smoothing`): One Euro Filter on all keypoints.  
 16. **Position correction (final step, Improvement 16):** Align first frame’s neck/hip (and knees in partial-body) to ref_name; apply that offset to **all** frames. This is the last refinement so no later step overwrites canvas alignment.  
-17. **Render and save:** Pose skeletons (ref, video_char, edited_ref), frame images, pose_sequence.mp4; in partial-body also pose_sequence_edited_ref.mp4 at edited_ref resolution.
+17. **Render and save:** Pose skeletons (ref, video_char, edited_ref), frame images, pose_sequence.mp4 (retargeted), pose_sequence_source.mp4 (source/driving poses at source video resolution); in partial-body also pose_sequence_edited_ref.mp4 at edited_ref resolution.
 
 **Partial-body mode** is useful when the reference image shows only part of the character (e.g., a close-up face shot) while the driving video shows the full body. Provide an edited full-body version of the reference image via `--edited_ref_name`:
 

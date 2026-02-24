@@ -2220,9 +2220,10 @@ def mp_main(args):
     logger.info('Loading DWpose model ...')
     dwpose_model = DWposeDetector()
 
-    # Step 1: extract poses from driving video; capture FPS from first video for output
+    # Step 1: extract poses from driving video; capture FPS and frame size from first video for output
     results_vis = []
     source_fps_for_output = None
+    source_video_h, source_video_w = None, None
     for i, fpath in enumerate(video_paths):
         logger.info("  [{}/{}] {}".format(i + 1, len(video_paths), fpath))
         cap = cv2.VideoCapture(fpath)
@@ -2234,6 +2235,8 @@ def mp_main(args):
             ret, frame = cap.read()
             if not ret:
                 break
+            if source_video_h is None:
+                source_video_h, source_video_w = frame.shape[0], frame.shape[1]
             results_vis.append(dwpose_model(frame))
         cap.release()
 
@@ -2474,10 +2477,11 @@ def mp_main(args):
     fullbody_body_validity = None
     fullbody_in_refspace = None
     partial_body_edit_ref_cand = None  # edit_ref pose candidate for ref/edit ratio in hand refinement
-    retargeted_edited_ref = None  # full-body retargeted sequence (video_char -> edited_ref) for saving edited_ref pose video
-    if partial_body_mode and coord_tf is not None:
+    retargeted_edited_ref = None  # full-body retargeted sequence (video_char -> edited_ref) for saving pose_sequence_edited_ref.mp4
+    if partial_body_mode:
         retargeted_edited_ref = [copy.deepcopy(pose) for pose in retargeted]
         partial_body_edit_ref_cand = edit_ref_cand.copy()
+    if partial_body_mode and coord_tf is not None:
         # Capture hand and body validity from full-body poses (before coord transform) for later masking
         fullbody_hand_validity = []
         fullbody_body_validity = []
@@ -2645,6 +2649,26 @@ def mp_main(args):
     logger.info("Encoding video with ffmpeg ...")
     os.system(ffmpeg_cmd)
     logger.info("Saved video: {}".format(video_path))
+
+    # Save extracted poses from source video (Step 1 output, no retargeting)
+    source_frames_dir = os.path.join(save_dir, "source_pose_frames")
+    os.makedirs(source_frames_dir, exist_ok=True)
+    src_h = source_video_h or render_h
+    src_w = source_video_w or render_w
+    logger.info("Saving extracted source poses (Step 1) to pose_sequence_source.mp4 ...")
+    for i, pose in enumerate(results_vis):
+        wo_face, with_face = draw_pose(pose, H=src_h, W=src_w)
+        img_path = os.path.join(source_frames_dir, "{:04d}.jpg".format(i))
+        cv2.imwrite(img_path, with_face if draw_face else wo_face)
+    video_path_source = os.path.join(save_dir, "pose_sequence_source.mp4")
+    ffmpeg_cmd_src = (
+        'ffmpeg -y -framerate {} -i {}/%04d.jpg '
+        '-c:v libx264 -pix_fmt yuv420p -crf 18 {}'
+    ).format(args.fps, source_frames_dir, video_path_source)
+    os.system(ffmpeg_cmd_src)
+    logger.info("Saved source pose video: {}".format(video_path_source))
+    if getattr(args, 'video_only', False):
+        shutil.rmtree(source_frames_dir, ignore_errors=True)
 
     # In partial-body mode, also save the full-body retargeted pose video (video_char -> edited_ref)
     if retargeted_edited_ref is not None and edit_ref_frame is not None:
